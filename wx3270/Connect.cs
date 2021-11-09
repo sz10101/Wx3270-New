@@ -7,7 +7,6 @@ namespace Wx3270
     using System;
     using System.Collections.Generic;
     using System.Linq;
-    using System.Security.Permissions;
     using System.Text;
     using System.Windows.Forms;
 
@@ -47,24 +46,19 @@ namespace Wx3270
         private readonly MainScreen mainScreen;
 
         /// <summary>
-        /// The host we are connecting to.
-        /// </summary>
-        private HostEntry connectHostEntry;
-
-        /// <summary>
-        /// True if there is an asynchronous connection completion to run.
-        /// </summary>
-        private bool connectCompletePending;
-
-        /// <summary>
         /// The pending connection completion.
         /// </summary>
         private ConnectComplete connectComplete;
 
         /// <summary>
-        /// True if an error from Connect() should be suppressed, because we initiated a disconnect.
+        /// True if connection errors should produce a pop-up.
         /// </summary>
-        private bool suppressConnectError;
+        private bool connectErrorPopups = true;
+
+        /// <summary>
+        /// The message box for connect errors.
+        /// </summary>
+        private NonModalMessageBox connectMessageBox;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Connect"/> class.
@@ -78,30 +72,15 @@ namespace Wx3270
 
             // Subscribe to connection state events.
             this.mainScreen.ConnectionStateEvent += this.HostConnectionChange;
+
+            // Register for asynchronous connect error pop-ups.
+            this.app.Popup.ConnectErrorEvent += this.ConnectError;
         }
 
         /// <summary>
         /// Gets the host we are connecting to.
         /// </summary>
-        public HostEntry ConnectHostEntry
-        {
-            get
-            {
-                return this.connectHostEntry;
-            }
-
-            private set
-            {
-                if (value != null)
-                {
-                    this.connectHostEntry = value;
-                }
-                else
-                {
-                    this.connectHostEntry = null;
-                }
-            }
-        }
+        public HostEntry ConnectHostEntry { get; private set; }
 
         /// <summary>
         /// Gets the emulator back end.
@@ -126,12 +105,33 @@ namespace Wx3270
         /// </summary>
         /// <param name="entry">Host entry.</param>
         /// <returns>True if connection was successfully initiated.</returns>
-        /// <param name="complete">Asynchronous completion delegate.</param>
-        public bool ConnectToHost(HostEntry entry, ConnectComplete complete = null)
+        public bool ConnectToHost(HostEntry entry)
         {
+            return this.ConnectToHost(entry, out _, null);
+        }
+
+        /// <summary>
+        /// Connect to a host.
+        /// </summary>
+        /// <param name="entry">Host entry.</param>
+        /// <param name="errorMessage">Returned error message, if <paramref name="complete"/> is not null.</param>
+        /// <param name="complete">Asynchronous completion delegate.</param>
+        /// <returns>True if connection was successfully initiated.</returns>
+        public bool ConnectToHost(HostEntry entry, out string errorMessage, ConnectComplete complete)
+        {
+            errorMessage = string.Empty;
+
             if (!this.app.TlsHello.Supported && entry.Prefixes.Contains(B3270.Prefix.TlsTunnel))
             {
-                ErrorBox.Show(I18n.Get(Message.TlsNotSupported), I18n.Get(Title.Connect));
+                if (complete != null)
+                {
+                    errorMessage = I18n.Get(Message.TlsNotSupported);
+                }
+                else
+                {
+                    ErrorBox.Show(I18n.Get(Message.TlsNotSupported), I18n.Get(Title.Connect));
+                }
+
                 return false;
             }
 
@@ -154,16 +154,13 @@ namespace Wx3270
             var allAdded = AddToggleIfSupported(tlsOptionsSupported, settings, B3270.Setting.StartTls, entry.AllowStartTls ? B3270.Value.True : B3270.Value.False)
                 && AddToggleIfSupported(tlsOptionsSupported, settings, B3270.Setting.AcceptHostname, entry.AcceptHostName, required: true)
                 && AddToggleIfSupported(tlsOptionsSupported, settings, B3270.Setting.ClientCert, entry.ClientCertificateName, required: true);
-            if (!allAdded)
+            if (!allAdded && complete == null)
             {
                 ErrorBox.Show(I18n.Get(Message.TlsOptionsNotSupported), I18n.Get(Title.Connect), MessageBoxIcon.Warning);
             }
 
-            if (entry.AutoConnect == AutoConnect.Reconnect)
-            {
-                settings.AddRange(new[] { B3270.Setting.Reconnect, B3270.Value.True });
-            }
-
+            var reconnect = entry.AutoConnect == AutoConnect.Reconnect;
+            settings.AddRange(new[] { B3270.Setting.Reconnect, reconnect ? B3270.Value.True : B3270.Value.False });
             settings.AddRange(new[] { B3270.Setting.LoginMacro, CleanLoginMacro(entry.LoginMacro) });
             settings.AddRange(new[] { B3270.Setting.NoTelnetInputMode, entry.NoTelnetInputType.ToString() });
 
@@ -206,59 +203,62 @@ namespace Wx3270
             this.mainScreen.ConnectHostType = entry.HostType; // for file transfers
             this.ConnectHostEntry = entry;
             this.connectComplete = complete;
-            this.connectCompletePending = complete != null;
-            this.suppressConnectError = false;
+            this.connectErrorPopups = true;
             this.app.BackEnd.RunActions(
                 actions,
                 (cookie, success, result) =>
                 {
-                    if (!success)
+                    var fromUconnect = this.connectComplete != null;
+                    if (fromUconnect)
                     {
-                        this.ConnectHostEntry = null;
-                        if (this.connectCompletePending)
+                        // Pass the result back to the uConnect action.
+                        this.connectComplete(success, result);
+                        this.connectComplete = null;
+                    }
+
+                    if (success)
+                    {
+                        if (entry.ConnectionType == ConnectionType.LocalProcess)
                         {
-                            this.connectCompletePending = false;
-                            this.connectComplete(false, result);
-                            this.connectComplete = null;
-                        }
-                        else if (!this.suppressConnectError)
-                        {
-                            ErrorBox.Show(result, I18n.Get(Title.Connect));
+                            // Connect to the local process.
+                            this.app.Cmd.Connect(entry);
                         }
                     }
                     else
                     {
-                        if (entry.ConnectionType == ConnectionType.LocalProcess)
+                        this.ConnectHostEntry = null;
+                        if (!fromUconnect && this.connectErrorPopups)
                         {
-                            // Connect to a local process.
-                            this.app.Cmd.Connect(entry);
-                        }
-
-                        if (this.connectCompletePending)
-                        {
-                            this.connectCompletePending = false;
-                            this.connectComplete(true, result);
-                            this.connectComplete = null;
+                            this.ConnectError(result, reconnect);
                         }
                     }
 
-                    this.suppressConnectError = false;
+                    this.connectErrorPopups = true;
                 });
 
             return true;
         }
 
         /// <summary>
-        /// Disconnect from the host.
+        /// Explcit disconnect from the host.
         /// </summary>
         public void Disconnect()
         {
             this.ConnectHostEntry = null;
             if (this.app.ConnectionState != ConnectionState.NotConnected)
             {
-                this.suppressConnectError = true;
+                // If the Connect() action is still pending, it will fail as a result of sending a Disconnect. That can be ignored.
+                this.connectErrorPopups = false;
+
+                // Stop reconnecting and disconnect.
                 this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.Reconnect, B3270.Value.False), ErrorBox.Completion(I18n.Get(Title.Disconnect)));
                 this.BackEnd.RunAction(new BackEndAction(B3270.Action.Disconnect), ErrorBox.Completion(I18n.Get(Title.Disconnect)));
+            }
+
+            // Pop down the connect message box.
+            if (this.connectMessageBox != null)
+            {
+                this.connectMessageBox.Close();
             }
         }
 
@@ -299,23 +299,78 @@ namespace Wx3270
         }
 
         /// <summary>
+        /// A connect error was reported.
+        /// </summary>
+        /// <param name="text">Error text to display.</param>
+        private void ConnectError(string text)
+        {
+            this.ConnectError(text, true);
+        }
+
+        /// <summary>
+        /// A connect error was reported.
+        /// </summary>
+        /// <param name="text">Error text.</param>
+        /// <param name="reconnect">True if reconnecting.</param>
+        private void ConnectError(string text, bool reconnect)
+        {
+            if (this.connectMessageBox != null)
+            {
+                // Message box is already showing. Simply update it.
+                this.connectMessageBox.MessageText = text;
+                return;
+            }
+
+            if (!this.connectErrorPopups)
+            {
+                // Resolve the race between aborting and retrying.
+                return;
+            }
+
+            this.connectMessageBox = new NonModalMessageBox(
+                I18n.Get(Title.Connect),
+                text,
+                retryAbort: reconnect && this.app.Allowed(Restrictions.Disconnect),
+                this.ConnectErrorPopupComplete);
+            this.connectMessageBox.Show(this.mainScreen);
+        }
+
+        /// <summary>
+        /// The connect message box is complete.
+        /// </summary>
+        /// <param name="result">Result from button press or form closing.</param>
+        private void ConnectErrorPopupComplete(DialogResult result)
+        {
+            // Throw away the message box.
+            this.connectMessageBox.Dispose();
+            this.connectMessageBox = null;
+
+            if (result == DialogResult.Cancel && this.app.ConnectionState != ConnectionState.NotConnected)
+            {
+                // Stop reconnecting, and suppress further connect pop-ups until it takes effect.
+                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.Reconnect, B3270.Value.False), ErrorBox.Completion(I18n.Get(Title.Disconnect)));
+                this.connectErrorPopups = false;
+            }
+        }
+
+        /// <summary>
         /// Connection change handler.
         /// </summary>
         private void HostConnectionChange()
         {
-            if (this.ConnectHostEntry == null)
-            {
-                return;
-            }
-
             var connectionState = this.app.ConnectionState;
             if (connectionState == ConnectionState.NotConnected)
             {
                 this.ConnectHostEntry = null;
-                this.connectCompletePending = false;
                 this.connectComplete = null;
-                this.suppressConnectError = false;
-                return;
+                this.connectErrorPopups = true;
+                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.LoginMacro, string.Empty), ErrorBox.Ignore());
+            }
+
+            if (connectionState.ToString().StartsWith("Connected") && this.connectMessageBox != null)
+            {
+                // We are now connected. If there is a connect error pop-up, pop it down.
+                this.connectMessageBox.Close();
             }
         }
 

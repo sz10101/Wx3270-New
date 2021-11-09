@@ -512,9 +512,15 @@ namespace Wx3270
         {
             // Change the display font.
             this.ScreenNewFont(font);
+            var newFont = font;
+            if (this.Maximized)
+            {
+                // Recompute the font size when maximized (ignore the selected size).
+                newFont = this.screenBox.RecomputeFont(this.ClientSize, ResizeType.Dynamic);
+            }
 
             // Change the OIA.
-            this.RefontOia(font);
+            this.RefontOia(newFont);
 
             if (!this.Maximized)
             {
@@ -524,7 +530,7 @@ namespace Wx3270
         }
 
         /// <summary>
-        /// z the screen (make it fit the current font tightly).
+        /// Make the screen fit the current font tightly.
         /// </summary>
         public void Snap()
         {
@@ -659,6 +665,17 @@ namespace Wx3270
             }
 
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        /// <summary>
+        /// Rounds a floating point number down.
+        /// </summary>
+        /// <param name="f">Number to round.</param>
+        /// <param name="granularity">Rounding granularity.</param>
+        /// <returns>Rounded number.</returns>
+        private static float RoundDown(float f, float granularity)
+        {
+            return (float)(Math.Truncate(f / granularity) * granularity);
         }
 
         /// <summary>
@@ -1056,7 +1073,7 @@ namespace Wx3270
             this.chordTimer.Tick += (sender, args) => this.ChordReset();
 
             // Register the local PrintText() action.
-            this.App.BackEnd.RegisterPassthru(Constants.Action.PrintText, this.PrintText);
+            this.BackEnd.RegisterPassthru(Constants.Action.PrintText, this.PrintText);
 
             // Handle user-generated window title changes.
             this.App.WindowTitle.Add(this, () =>
@@ -1734,9 +1751,16 @@ namespace Wx3270
                         {
                             var mainRatio = (float)mainCellSize.Width / (float)mainCellSize.Height;
                             var xRatio = (float)xCellSize.Width / (float)mainCellSize.Height;
-                            var newSize = font.Size * mainRatio / xRatio;
+                            var newSize = RoundDown(font.Size * mainRatio / xRatio, 0.25F);
                             try3270Font.Dispose();
+                            Trace.Line(Trace.Type.Window, "Trying new OIA 3270 font {0} (vs. {1})", newSize, font.Size, mainRatio, xRatio);
                             try3270Font = new Font("3270", newSize);
+
+                            xCellSize = TextRenderer.MeasureText(g, "X", try3270Font, new Size(1000, 1000), TextFormatFlags.Left | TextFormatFlags.NoPadding);
+                            if (xCellSize.Width > mainCellSize.Width)
+                            {
+                                Trace.Line(Trace.Type.Window, " (Too big!)");
+                            }
                         }
                     }
                 }
@@ -2589,6 +2613,7 @@ namespace Wx3270
                 Trace.Line(Trace.Type.Window, " ==> resize");
                 this.screenBox.Maximize(this.Maximized, this.ClientSize);
                 var newFont = this.screenBox.RecomputeFont(this.ClientSize, ResizeType.Dynamic);
+
                 if (this.ProfileManager.PushAndSave(
                     (current) =>
                     {
