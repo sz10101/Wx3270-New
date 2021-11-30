@@ -603,7 +603,12 @@ namespace Wx3270
 
             if (this.EditMode && profile == null)
             {
-                Usage("Must specify -profile with -edit");
+                Usage("Must specify " + Constants.Option.Profile + " with " + Constants.Option.Edit);
+            }
+
+            if (!string.IsNullOrWhiteSpace(culture) && !string.IsNullOrWhiteSpace(this.DumpLocalization))
+            {
+                Usage("Cannot specify " + Constants.Option.Culture + " with " + Constants.Option.DumpLocalization + " (en-US is implied)");
             }
 
             switch (restrictAllow)
@@ -664,14 +669,11 @@ namespace Wx3270
             // Set up internationalization.
             try
             {
-                I18nBase.Setup("Wx3270", culture);
+                I18nBase.Setup("Wx3270", culture, forceBootstrap: !string.IsNullOrEmpty(this.DumpLocalization));
             }
             catch (Exception e)
             {
-                if (culture != null)
-                {
-                    ErrorBox.Show(e.Message, "wx3270 Localization", MessageBoxIcon.Information);
-                }
+                ErrorBox.Show(e.Message, "wx3270 Localization", MessageBoxIcon.Information);
             }
 
             // Load the profile for the first time, so we can use its settings to create basic objects.

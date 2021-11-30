@@ -538,7 +538,7 @@ namespace Wx3270
         }
 
         /// <summary>
-        /// Process a chae or attr element.
+        /// Process a char or attr element.
         /// </summary>
         /// <param name="attributes">Element attributes.</param>
         /// <param name="text">Text to store, or null.</param>
