@@ -198,7 +198,7 @@ namespace Wx3270
         /// <returns>Completion delegate.</returns>
         public static BackEndCompletion Ignore()
         {
-            return (cookie, success, result) => { };
+            return (cookie, success, result, misc) => { };
         }
 
         /// <inheritdoc />
@@ -703,7 +703,7 @@ namespace Wx3270
                 Console.WriteLine("BackEnd caught exception: " + e.ToString());
                 ErrorBox.ShowCopy(
                     this.control,
-                    I18n.Get(Message.XmlException) + ":" + Environment.NewLine + e.Message,
+                    I18n.Get(Message.XmlException) + ":" + Environment.NewLine + e,
                     I18n.Get(Title.Fatal));
 
                 // Do miscellaneous clean-up and exit.
@@ -740,7 +740,7 @@ namespace Wx3270
 
             if (this.completions.TryGetValue(tag, out Completion completion))
             {
-                completion.BackEndCompletion(completion.Cookie, success, text);
+                completion.BackEndCompletion(completion.Cookie, success, text, attributes);
                 this.completions.Remove(tag);
             }
         }

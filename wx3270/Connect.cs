@@ -74,7 +74,7 @@ namespace Wx3270
             this.mainScreen.ConnectionStateEvent += this.HostConnectionChange;
 
             // Register for asynchronous connect error pop-ups.
-            this.app.Popup.ConnectErrorEvent += this.ConnectError;
+            this.app.Popup.ConnectErrorEvent += this.ConnectErrorEvent;
         }
 
         /// <summary>
@@ -160,9 +160,18 @@ namespace Wx3270
             }
 
             var reconnect = entry.AutoConnect == AutoConnect.Reconnect;
-            settings.AddRange(new[] { B3270.Setting.Reconnect, reconnect ? B3270.Value.True : B3270.Value.False });
-            settings.AddRange(new[] { B3270.Setting.LoginMacro, CleanLoginMacro(entry.LoginMacro) });
-            settings.AddRange(new[] { B3270.Setting.NoTelnetInputMode, entry.NoTelnetInputType.ToString() });
+            settings.AddRange(
+                new[]
+                {
+                    B3270.Setting.Reconnect,
+                    reconnect ? B3270.Value.True : B3270.Value.False,
+                    B3270.Setting.LoginMacro,
+                    CleanLoginMacro(entry.LoginMacro),
+                    B3270.Setting.NoTelnetInputMode,
+                    entry.NoTelnetInputType.ToString(),
+                    B3270.Setting.Retry,
+                    this.app.ProfileManager.Current.Retry ? B3270.Value.True : B3270.Value.False,
+                });
 
             var actions = new List<BackEndAction>() { new BackEndAction(B3270.Action.Set, settings) };
             if (entry.ConnectionType == ConnectionType.Host)
@@ -206,7 +215,7 @@ namespace Wx3270
             this.connectErrorPopups = true;
             this.app.BackEnd.RunActions(
                 actions,
-                (cookie, success, result) =>
+                (cookie, success, result, misc) =>
                 {
                     var fromUconnect = this.connectComplete != null;
                     if (fromUconnect)
@@ -229,7 +238,7 @@ namespace Wx3270
                         this.ConnectHostEntry = null;
                         if (!fromUconnect && this.connectErrorPopups)
                         {
-                            this.ConnectError(result, reconnect);
+                            this.ConnectError(result, misc.ContainsKey(B3270.Attribute.Retrying) && bool.Parse(misc[B3270.Attribute.Retrying]));
                         }
                     }
 
@@ -251,8 +260,18 @@ namespace Wx3270
                 this.connectErrorPopups = false;
 
                 // Stop reconnecting and disconnect.
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.Reconnect, B3270.Value.False), ErrorBox.Completion(I18n.Get(Title.Disconnect)));
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Disconnect), ErrorBox.Completion(I18n.Get(Title.Disconnect)));
+                this.BackEnd.RunActions(
+                    new[]
+                    {
+                        new BackEndAction(
+                            B3270.Action.Set,
+                            B3270.Setting.Reconnect,
+                            B3270.Value.False,
+                            B3270.Setting.Retry,
+                            B3270.Value.False),
+                        new BackEndAction(B3270.Action.Disconnect),
+                    },
+                    ErrorBox.Completion(I18n.Get(Title.Disconnect)));
             }
 
             // Pop down the connect message box.
@@ -299,12 +318,13 @@ namespace Wx3270
         }
 
         /// <summary>
-        /// A connect error was reported.
+        /// An asynchronous connect error was reported.
         /// </summary>
         /// <param name="text">Error text to display.</param>
-        private void ConnectError(string text)
+        /// <param name="retrying">True if connection is being retried.</param>
+        private void ConnectErrorEvent(string text, bool retrying)
         {
-            this.ConnectError(text, true);
+            this.ConnectError(text, retrying);
         }
 
         /// <summary>
@@ -348,7 +368,18 @@ namespace Wx3270
             if (result == DialogResult.Cancel && this.app.ConnectionState != ConnectionState.NotConnected)
             {
                 // Stop reconnecting, and suppress further connect pop-ups until it takes effect.
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.Reconnect, B3270.Value.False), ErrorBox.Completion(I18n.Get(Title.Disconnect)));
+                this.BackEnd.RunActions(
+                    new[]
+                    {
+                        new BackEndAction(
+                            B3270.Action.Set,
+                            B3270.Setting.Reconnect,
+                            B3270.Value.False,
+                            B3270.Setting.Retry,
+                            B3270.Value.False),
+                        new BackEndAction(B3270.Action.Disconnect),
+                    },
+                    ErrorBox.Completion(I18n.Get(Title.Disconnect)));
                 this.connectErrorPopups = false;
             }
         }

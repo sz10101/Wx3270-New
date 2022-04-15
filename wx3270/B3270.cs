@@ -497,6 +497,11 @@ namespace Wx3270
             public const string RecordsSent = "records-sent";
 
             /// <summary>
+            /// True if connection is being retried.
+            /// </summary>
+            public const string Retrying = "retrying";
+
+            /// <summary>
             /// Cursor row.
             /// </summary>
             public const string Row = "row";
@@ -1021,6 +1026,16 @@ namespace Wx3270
             public const string Oversize = "oversize";
 
             /// <summary>
+            /// The IPv4 preference setting.
+            /// </summary>
+            public const string PreferIpv4 = "preferIpv4";
+
+            /// <summary>
+            /// The IPv6 preference setting.
+            /// </summary>
+            public const string PreferIpv6 = "preferIpv6";
+
+            /// <summary>
             /// The printer code page setting.
             /// </summary>
             public const string PrinterCodePage = "printer.codepage";
@@ -1049,6 +1064,11 @@ namespace Wx3270
             /// Automatic re-connect.
             /// </summary>
             public const string Reconnect = "reconnect";
+
+            /// <summary>
+            /// Automatic retry.
+            /// </summary>
+            public const string Retry = "retry";
 
             /// <summary>
             /// Reverse input mode.
