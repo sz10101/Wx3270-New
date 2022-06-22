@@ -8,6 +8,7 @@ namespace Wx3270
     using System.Collections.Generic;
     using System.Drawing;
     using System.Linq;
+    using System.Runtime.InteropServices;
     using System.Windows.Forms;
     using I18nBase;
     using Wx3270.Contracts;
@@ -1750,46 +1751,52 @@ namespace Wx3270
         private void RefontOia(Font font)
         {
             var try3270Font = font;
-
-            // Find a 3270 font with the same metrics.
-            if (font.Name != Name3270Font)
+            if (VersionSpecific.SupportsPua)
             {
-                try3270Font = new Font(Name3270Font, font.Size);
-                if (try3270Font.Name == Name3270Font)
+                // Find a 3270 font with the same metrics.
+                if (font.Name != Name3270Font)
                 {
-                    this.oia3270Font = true;
-
-                    // Set up the cell measurements.
-                    using (Graphics g = this.CreateGraphics())
+                    try3270Font = new Font(Name3270Font, font.Size);
+                    if (try3270Font.Name == Name3270Font)
                     {
-                        var mainCellSize = TextRenderer.MeasureText(g, "X", font, new Size(1000, 1000), TextFormatFlags.Left | TextFormatFlags.NoPadding);
-                        var xCellSize = TextRenderer.MeasureText(g, "X", try3270Font, new Size(1000, 1000), TextFormatFlags.Left | TextFormatFlags.NoPadding);
-                        if (xCellSize.Width > mainCellSize.Width)
-                        {
-                            var mainRatio = (float)mainCellSize.Width / (float)mainCellSize.Height;
-                            var xRatio = (float)xCellSize.Width / (float)mainCellSize.Height;
-                            var newSize = RoundDown(font.Size * mainRatio / xRatio, 0.25F);
-                            try3270Font.Dispose();
-                            Trace.Line(Trace.Type.Window, "Trying new OIA 3270 font {0} (vs. {1})", newSize, font.Size, mainRatio, xRatio);
-                            try3270Font = new Font(Name3270Font, newSize);
+                        this.oia3270Font = true;
 
-                            xCellSize = TextRenderer.MeasureText(g, "X", try3270Font, new Size(1000, 1000), TextFormatFlags.Left | TextFormatFlags.NoPadding);
+                        // Set up the cell measurements.
+                        using (Graphics g = this.CreateGraphics())
+                        {
+                            var mainCellSize = TextRenderer.MeasureText(g, "X", font, new Size(1000, 1000), TextFormatFlags.Left | TextFormatFlags.NoPadding);
+                            var xCellSize = TextRenderer.MeasureText(g, "X", try3270Font, new Size(1000, 1000), TextFormatFlags.Left | TextFormatFlags.NoPadding);
                             if (xCellSize.Width > mainCellSize.Width)
                             {
-                                Trace.Line(Trace.Type.Window, " (Too big!)");
+                                var mainRatio = (float)mainCellSize.Width / (float)mainCellSize.Height;
+                                var xRatio = (float)xCellSize.Width / (float)mainCellSize.Height;
+                                var newSize = RoundDown(font.Size * mainRatio / xRatio, 0.25F);
+                                try3270Font.Dispose();
+                                Trace.Line(Trace.Type.Window, "Trying new OIA 3270 font {0} (vs. {1})", newSize, font.Size, mainRatio, xRatio);
+                                try3270Font = new Font(Name3270Font, newSize);
+
+                                xCellSize = TextRenderer.MeasureText(g, "X", try3270Font, new Size(1000, 1000), TextFormatFlags.Left | TextFormatFlags.NoPadding);
+                                if (xCellSize.Width > mainCellSize.Width)
+                                {
+                                    Trace.Line(Trace.Type.Window, " (Too big!)");
+                                }
                             }
                         }
+                    }
+                    else
+                    {
+                        try3270Font = font;
+                        this.oia3270Font = false;
                     }
                 }
                 else
                 {
-                    try3270Font = font;
-                    this.oia3270Font = false;
+                    this.oia3270Font = true;
                 }
             }
             else
             {
-                this.oia3270Font = true;
+                this.oia3270Font = false;
             }
 
             // Apply it to the OIA.
@@ -2683,9 +2690,32 @@ namespace Wx3270
         }
 
         /// <summary>
+        /// Create an image of the main screen.
+        /// </summary>
+        /// <returns>Bitmap.</returns>
+        private Image PrintClientRectangleToImage()
+        {
+            var bmp = new Bitmap(this.ClientSize.Width, this.ClientSize.Height);
+            using (var bmpGraphics = Graphics.FromImage(bmp))
+            {
+                var bmpDC = bmpGraphics.GetHdc();
+                using (Graphics formGraphics = Graphics.FromHwnd(this.Handle))
+                {
+                    var formDC = formGraphics.GetHdc();
+                    NativeMethods.BitBlt(bmpDC, 0, 0, this.ClientSize.Width, this.ClientSize.Height, formDC, 0, 0, NativeMethods.SRCCOPY);
+                    formGraphics.ReleaseHdc(formDC);
+                }
+
+                bmpGraphics.ReleaseHdc(bmpDC);
+            }
+
+            return bmp;
+        }
+
+        /// <summary>
         /// Take a screen snapshot.
         /// </summary>
-        /// <param name="fileName">PNG file to save the image in.</param>
+        /// <param name="fileName">File to save the image in.</param>
         /// <param name="errmsg">Error message.</param>
         /// <returns>True for success.</returns>
         private bool SnapScreen(string fileName, out string errmsg)
@@ -2696,9 +2726,9 @@ namespace Wx3270
                 return false;
             }
 
+            Application.DoEvents();
             errmsg = null;
-            var bmp = new Bitmap(this.Width, this.Height);
-            this.DrawToBitmap(bmp, new Rectangle(Point.Empty, this.Size));
+            using var bmp = this.PrintClientRectangleToImage();
             try
             {
                 bmp.Save(fileName);

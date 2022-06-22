@@ -238,7 +238,7 @@ namespace Wx3270
                         this.ConnectHostEntry = null;
                         if (!fromUconnect && this.connectErrorPopups)
                         {
-                            this.ConnectError(result, misc.ContainsKey(B3270.Attribute.Retrying) && bool.Parse(misc[B3270.Attribute.Retrying]));
+                            this.ConnectError(result, false);
                         }
                     }
 
@@ -394,7 +394,6 @@ namespace Wx3270
             {
                 this.ConnectHostEntry = null;
                 this.connectComplete = null;
-                this.connectErrorPopups = true;
                 this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.LoginMacro, string.Empty), ErrorBox.Ignore());
             }
 
