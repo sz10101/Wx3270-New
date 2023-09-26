@@ -55,6 +55,9 @@ namespace Wx3270
             { ChangeKeyword.Description, "profile description" },
             { ChangeKeyword.WindowTitle, "window title" },
             { ChangeKeyword.ScrollBar, "scroll bar" },
+            { ChangeKeyword.PrinterType, "printer type" },
+            { ChangeKeyword.PrinterSavePath, "printer save path" },
+            { ChangeKeyword.MenuBar, "hide menu bar" },
         };
 
         /// <summary>
@@ -1221,6 +1224,11 @@ namespace Wx3270
             /// Printer save path.
             /// </summary>
             public const string PrinterSavePath = "PrinterSavePath";
+
+            /// <summary>
+            /// Menu bar.
+            /// </summary>
+            public const string MenuBar = "MenuBar";
         }
     }
 }

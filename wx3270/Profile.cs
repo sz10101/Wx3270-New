@@ -476,6 +476,12 @@ namespace Wx3270
         public Dictionary<string, string> MiscSettings { get; set; } = new Dictionary<string, string>();
 
         /// <summary>
+        /// Gets or sets a value indicating whether the menu bar is displayed.
+        /// </summary>
+        [JsonProperty]
+        public bool MenuBar { get; set; } = true;
+
+        /// <summary>
         /// Should-serialize method for the <see cref="Oversize"/> field.
         /// </summary>
         /// <returns>True if it should be serialized.</returns>

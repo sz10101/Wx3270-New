@@ -6,6 +6,7 @@ namespace Wx3270
 {
     using System;
     using System.Diagnostics;
+    using System.Linq;
     using System.Windows.Forms;
 
     using I18nBase;
@@ -32,9 +33,16 @@ namespace Wx3270
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
 
+                // Proceed with initialization. */
+                var splash = new Splash();
+                if (!args.Any(arg => arg.ToLowerInvariant() == Constants.Option.NoSplash))
+                {
+                    splash.Start();
+                }
+
                 var main = new MainScreen();
                 mainControl = main;
-                app = new Wx3270App(main, main);
+                app = new Wx3270App(main, main, splash);
                 app.Init(args);
                 main.Init(app);
 

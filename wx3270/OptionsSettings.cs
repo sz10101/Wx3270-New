@@ -56,8 +56,9 @@ namespace Wx3270
                 this.printerComboBox.Items.Add(printer);
             }
 
-            // Set up the scroll bar checkbox.
+            // Set up the scroll bar and menu bar checkboxes.
             this.scrollbarCheckBox.Enabled = !this.app.NoScrollBar;
+            this.menuBarCheckBox.Enabled = !this.app.NoButtons;
 
             // Subscribe to profile change events and merges.
             this.ProfileManager.ChangeTo += this.ProfileOptionsChanged;
@@ -70,6 +71,12 @@ namespace Wx3270
             this.app.SettingChange.Register(
                 (settingName, settingDictionary) => this.Invoke(new MethodInvoker(() => this.OptionsSettingChanged(settingName, settingDictionary))),
                 new[] { B3270.Setting.PrinterName, B3270.Setting.PrinterOptions, B3270.Setting.PrinterCodePage, B3270.Setting.NopSeconds });
+
+            // Subscribe to menu bar changes.
+            if (!this.app.NoButtons)
+            {
+                this.mainScreen.MenuBarSetEvent += () => this.menuBarCheckBox.Checked = true;
+            }
         }
 
         /// <summary>
@@ -100,7 +107,12 @@ namespace Wx3270
                 toProfile.Printer == fromProfile.Printer &&
                 toProfile.PrinterCodePage == fromProfile.PrinterCodePage &&
                 toProfile.PrinterOptions == fromProfile.PrinterOptions &&
-                toProfile.NopInterval == fromProfile.NopInterval)
+                toProfile.NopInterval == fromProfile.NopInterval &&
+                toProfile.Retry == fromProfile.Retry &&
+                toProfile.PreferIpv4 == fromProfile.PreferIpv4 &&
+                toProfile.PreferIpv6 == fromProfile.PreferIpv6 &&
+                toProfile.ScrollBar == fromProfile.ScrollBar &&
+                toProfile.MenuBar == fromProfile.MenuBar)
             {
                 return false;
             }
@@ -110,6 +122,11 @@ namespace Wx3270
             toProfile.PrinterCodePage = fromProfile.PrinterCodePage;
             toProfile.PrinterOptions = fromProfile.PrinterOptions;
             toProfile.NopInterval = fromProfile.NopInterval;
+            toProfile.Retry = fromProfile.Retry;
+            toProfile.PreferIpv4 = fromProfile.PreferIpv4;
+            toProfile.PreferIpv6 = fromProfile.PreferIpv6;
+            toProfile.ScrollBar = fromProfile.ScrollBar;
+            toProfile.MenuBar = fromProfile.MenuBar;
             return true;
         }
 
@@ -307,10 +324,10 @@ namespace Wx3270
             this.titleTextBox.Text = profile.WindowTitle;
 
             // Set scroll bar.
-            if (!this.app.NoScrollBar)
-            {
-                this.scrollbarCheckBox.Checked = profile.ScrollBar;
-            }
+            this.scrollbarCheckBox.Checked = profile.ScrollBar;
+
+            // Set menu bar.
+            this.menuBarCheckBox.Checked = profile.MenuBar;
         }
 
         /// <summary>
@@ -444,20 +461,42 @@ namespace Wx3270
             }
 
             var settingName = (string)checkBox.Tag;
+            System.Drawing.Size? size = null;
             switch (settingName)
             {
                 case ChangeKeyword.ScrollBar:
-                    var size = this.mainScreen.ToggleScrollBar(checkBox.Checked);
-                    this.ProfileManager.PushAndSave(
-                        (current) =>
-                        {
-                            current.ScrollBar = checkBox.Checked;
-                            if (size != null)
+                    if (!this.app.NoScrollBar)
+                    {
+                        size = this.mainScreen.ToggleScrollBar(checkBox.Checked);
+                        this.ProfileManager.PushAndSave(
+                            (current) =>
                             {
-                                current.Size = size.Value;
-                            }
-                        },
-                        this.ChangeName(settingName));
+                                current.ScrollBar = checkBox.Checked;
+                                if (size != null)
+                                {
+                                    current.Size = size.Value;
+                                }
+                            },
+                            this.ChangeName(settingName));
+                    }
+
+                    break;
+                case ChangeKeyword.MenuBar:
+                    if (!this.app.NoButtons)
+                    {
+                        size = this.mainScreen.ToggleFixedMenuBar(checkBox.Checked);
+                        this.ProfileManager.PushAndSave(
+                            (current) =>
+                            {
+                                current.MenuBar = checkBox.Checked;
+                                if (size != null)
+                                {
+                                    current.Size = size.Value;
+                                }
+                            },
+                            this.ChangeName(settingName));
+                    }
+
                     break;
             }
         }
