@@ -7,14 +7,27 @@ namespace Wx3270
     using System;
     using System.Collections.Generic;
     using System.Drawing.Printing;
+    using System.Linq;
     using System.Text.RegularExpressions;
     using System.Windows.Forms;
+    using I18nBase;
+    using Wx3270.Contracts;
 
     /// <summary>
     /// The Options tab in the settings dialog.
     /// </summary>
     public partial class Settings
     {
+        /// <summary>
+        /// The maximum oversize rows times columns.
+        /// </summary>
+        public const int OversizeMax = 0x3fff;
+
+        /// <summary>
+        /// Name of the unknonw code page error.
+        /// </summary>
+        private static readonly string UnknownCodePageError = I18n.Combine(nameof(Settings), "error", "unknownCodePage");
+
         /// <summary>
         /// The sample image.
         /// </summary>
@@ -31,10 +44,273 @@ namespace Wx3270
         private RadioEnum<PrinterType> printerType;
 
         /// <summary>
+        /// True if there is a host connection.
+        /// </summary>
+        private bool connected = false;
+
+        /// <summary>
+        /// True if this is a full profile.
+        /// </summary>
+        private bool isFullProfile = true;
+
+        /// <summary>
+        /// The color mode radio buttons and UI state.
+        /// </summary>
+        private RadioEnum<ColorModeEnum> colorMode;
+
+        /// <summary>
+        /// Back-end initialization is complete.
+        /// </summary>
+        private bool ready;
+
+        /// <summary>
+        /// We are in extended mode (shadow for extended mode check box, which shows as indeterminate when override is in effect).
+        /// </summary>
+        private bool extendedMode;
+
+        /// <summary>
+        /// Event called when the color mode changes.
+        /// </summary>
+        private event Action<bool> ColorModeChangedEvent = (color) => { };
+
+        /// <summary>
+        /// Color mode enumeration.
+        /// </summary>
+        private enum ColorModeEnum
+        {
+            /// <summary>
+            /// Color (3279) mode.
+            /// </summary>
+            Color = 3279,
+
+            /// <summary>
+            /// Monochrome (3278) mode.
+            /// </summary>
+            Monochrome = 3278,
+        }
+
+        /// <summary>
+        /// Model number enumeration.
+        /// </summary>
+        private enum ModelEnum
+        {
+            /// <summary>
+            /// Model 2.
+            /// </summary>
+            Model2 = 2,
+
+            /// <summary>
+            /// Model 3.
+            /// </summary>
+            Model3 = 3,
+
+            /// <summary>
+            /// Model 4.
+            /// </summary>
+            Model4 = 4,
+
+            /// <summary>
+            /// Model 5.
+            /// </summary>
+            Model5 = 5,
+        }
+
+        /// <summary>
+        /// Gets a value indicating whether oversize mode is enabled.
+        /// </summary>
+        private bool UiIsOversize => OversizeCheck(this.UiModelDimensions, (int)this.rowsUpDown.Value, (int)this.columnsUpDown.Value);
+
+        /// <summary>
+        /// Gets the model, according to the UI.
+        /// </summary>
+        private int UiModel => this.UiModelDimensions.Model;
+
+        /// <summary>
+        /// Gets the model dimensions, according to the UI.
+        /// </summary>
+        private ModelDimensions UiModelDimensions => this.modelComboBox.SelectedItem as ModelDimensions;
+
+        /// <summary>
+        /// Gets the oversize rows, according to the UI.
+        /// </summary>
+        private int UiOversizeRows => this.oversizeCheckBox.Checked ? (int)this.rowsUpDown.Value : 0;
+
+        /// <summary>
+        /// Gets the oversize columns, according to the UI.
+        /// </summary>
+        private int UiOversizeColumns => this.oversizeCheckBox.Checked ? (int)this.columnsUpDown.Value : 0;
+
+        /// <summary>
+        /// Static localization.
+        /// </summary>
+        [I18nInit]
+        public static void LocalizeOptionSettings()
+        {
+            // Set up the tour.
+#pragma warning disable SA1118 // Parameter should not span multiple lines
+#pragma warning disable SA1137 // Elements should have the same indentation
+
+            // Global instructions.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(optionsTab)), "Tour: Option settings");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(optionsTab)),
+@"Use this tab to change terminal emulation and display settings.");
+
+            // Preview box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(optionsSampleGroupBox)), "Preview display");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(optionsSampleGroupBox)),
+@"This miniature emulator window displays the effect of the current set of options.");
+
+            // Display box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(displayGroupBox)), "Color emulation");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(displayGroupBox)),
+@"Choose between a 3278 (monochrome) and 3279 (color) display here.
+
+If this setting is changed while connected, the change will not take effect until the connection is broken.");
+
+            // Opacity box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(opacityGroupBox)), "Opacity");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(opacityGroupBox)),
+@"Use the slider to change the opacity of the wx3270 screen and keypad windows.");
+
+            // Display box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(modelGroupBox)), "Screen size");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(modelGroupBox)),
+@"Choose the 3270 model here, which defines the basic screen dimensions (number of rows and columns).
+
+Some hosts also allow an 'oversize' option, with a larger number of rows and columns than the basic size.
+
+If this setting is changed while connected, the change will not take effect until the connection is broken.");
+
+            // Terminal name box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(terminalNameGroupBox)), "Terminal name");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(terminalNameGroupBox)),
+@"As part of negotiation between the host and the 3270 emulator, the emulator tells the host what kind of terminal it is.
+
+Normally this is constructed from the 3270 model, color option and oversize settings, but if necessary, you can override it here.
+
+If this setting is changed while connected, the change will not take effect until the connection is broken.");
+
+            // Miscellaneous settings box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(miscGroupBox)), "Miscellaneous options");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(miscGroupBox)),
+@"This is a grab-bag of miscellaneous options. The x3270 Wiki is the best place to find the specific definitions of each.");
+
+            // Cursor box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(cursorGroupBox)), "Cursor settings");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(cursorGroupBox)),
+@"Change cursor settings here: Block versus underscore cursor, blinking cursor, and crosshair cursor.
+
+The preview display above will show the effect of your choices.");
+
+            // Code page box.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(codePageGroupBox)), "Host code page");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(codePageGroupBox)),
+@"Define the EBCDIC code page used by the host here.
+
+The code page defines the mappings between EBCDIC code points and displayed glyphs. The host does not tell the emulator which code page it is using, so it needs to be defined here.
+
+The default of 'bracket' is a minor variation of the U.S. code page (cp037).");
+
+            // Printer options.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(printerSessionGroupBox)), "Attached printer");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(printerSessionGroupBox)),
+@"wx3270 can also emulate an IBM 3287 printer attached to the 3270 terminal, using the included pr3287 utility. Set up the general options here.
+
+pr3287 can send output to a real printer connected to your workstation, or it can save the printer output as text files in a directory you specify. The latter is helpful because pr3287 generally doesn't support PDF printers, such as Microsoft's Print to PDF.
+
+Also note that these are general pr3287 settings. Details about how pr3287 connects to the host are defined per connection, in the Connection Editor.");
+
+            // Printer options.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(descriptionGroupBox)), "Description and window title");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(descriptionGroupBox)),
+@"Set up a profile description here, which is the text that is displayed when you hover the mouse over this profile in the Profiles and Connections window.
+
+You can also define the window title here. This is a per-profile setting; you can also define the window title for each connection in the Connection Editor.");
+
+#pragma warning restore SA1137 // Elements should have the same indentation
+#pragma warning restore SA1118 // Parameter should not span multiple lines
+        }
+
+        /// <summary>
+        /// Check for oversize.
+        /// </summary>
+        /// <param name="model">Model number.</param>
+        /// <param name="rows">Number of rows.</param>
+        /// <param name="columns">Number of columns.</param>
+        /// <returns>True if oversize.</returns>
+        private static bool OversizeCheck(ModelDimensions model, int rows, int columns)
+        {
+            return rows != model.Rows || columns != model.Columns;
+        }
+
+        /// <summary>
+        /// Construct a value for toggling the model.
+        /// </summary>
+        /// <param name="colorMode">Color mode.</param>
+        /// <param name="model">Model number.</param>
+        /// <param name="extendedMode">Extended mode.</param>
+        /// <param name="rows">Number of rows.</param>
+        /// <param name="columns">Number of columns.</param>
+        /// <returns>List of arguments.</returns>
+        private static IEnumerable<string> ModelOptions(bool colorMode, int model, bool extendedMode, int rows, int columns)
+        {
+            var startupConfig = new StartupConfig
+            {
+                Model = model,
+                ColorMode = colorMode,
+                ExtendedMode = extendedMode,
+                OversizeRows = rows,
+                OversizeColumns = columns,
+            };
+            return new[]
+            {
+                B3270.Setting.Model, startupConfig.ModelParameter,
+                B3270.Setting.Oversize, startupConfig.OversizeParameter,
+            };
+        }
+
+        /// <summary>
         /// Initialize the Options tab.
         /// </summary>
         private void OptionsTabInit()
         {
+            // Set up the databases that are populated from the back-end's init indication.
+            this.app.ModelsDb.AddDone(() =>
+            {
+                this.modelComboBox.Items.Clear();
+                this.modelComboBox.Items.AddRange(this.app.ModelsDb.Models.Values.ToArray());
+            });
+
+            this.app.CodePageDb.AddDone(() =>
+            {
+                this.SafeControlModify(this.codePageListBox, () =>
+                {
+                    this.codePageListBox.Items.Clear();
+                    this.codePageListBox.Items.AddRange(this.app.CodePageDb.All.ToArray());
+                });
+            });
+
+            // Set up the radio button enumerations.
+            this.cursorType = new RadioEnum<CursorType>(this.cursorGroupBox);
+            this.cursorType.Changed += this.CursorCheckedChanged;
+            this.colorMode = new RadioEnum<ColorModeEnum>(this.displayGroupBox);
+            this.colorMode.Changed += this.ColorModeChanged;
+            this.printerType = new RadioEnum<PrinterType>(this.printerSessionGroupBox);
+            this.printerType.Changed += this.PrinterTypeChanged;
+
+            this.modelComboBox.SelectedValueChanged += this.ModelBoxChanged;
+
             // Set up the screen sample.
             this.optionsScreenSample = new ScreenSample(
                 this,
@@ -42,41 +318,419 @@ namespace Wx3270
                 this.optionsPreviewLayoutPanel,
                 this.optionsPreviewStatusLineLabel,
                 this.optionsPreviewSeparatorPictureBox,
-                this.ColorMode);
-
-            // Set up the radio buttons.
-            this.cursorType = new RadioEnum<CursorType>(this.CursorGroupBox);
-            this.cursorType.Changed += this.CursorCheckedChanged;
-            this.printerType = new RadioEnum<PrinterType>(this.printerSessionGroupBox);
-            this.printerType.Changed += this.PrinterTypeChanged;
+                colorMode: this.ColorMode,
+                withExtras: false);
 
             // Set up the printer list.
-            foreach (var printer in PrinterSettings.InstalledPrinters)
+            try
             {
-                this.printerComboBox.Items.Add(printer);
+                foreach (var printer in PrinterSettings.InstalledPrinters)
+                {
+                    this.printerComboBox.Items.Add(printer);
+                }
+            }
+            catch (Exception ex)
+            {
+                Trace.Line(Trace.Type.Window, $"Cannot get installed printers, exception '{ex.Message}'");
             }
 
             // Set up the scroll bar and menu bar checkboxes.
             this.scrollbarCheckBox.Enabled = !this.app.NoScrollBar;
             this.menuBarCheckBox.Enabled = !this.app.NoButtons;
 
-            // Subscribe to profile change events and merges.
-            this.ProfileManager.ChangeTo += this.ProfileOptionsChanged;
-            this.ProfileManager.RegisterMerge(ImportType.OtherSettingsReplace, this.MergeOptions);
+            // Set up the follower checkbox.
+            if (this.ProfileManager.Current.ReadOnly)
+            {
+                this.followerCheckBox.Checked = !this.app.Detached;
+            }
+            else
+            {
+                this.followerCheckBox.Visible = false;
+            }
+
+            // Subscribe to profile change events.
+            this.ProfileManager.AddChangeTo(this.ProfileOptionsChanged);
 
             // Subscribe to color mode change events.
             this.ColorModeChangedEvent += (color) => this.optionsScreenSample.Invalidate();
 
-            // Subscribe to settings changes.
-            this.app.SettingChange.Register(
-                (settingName, settingDictionary) => this.Invoke(new MethodInvoker(() => this.OptionsSettingChanged(settingName, settingDictionary))),
-                new[] { B3270.Setting.PrinterName, B3270.Setting.PrinterOptions, B3270.Setting.PrinterCodePage, B3270.Setting.NopSeconds });
+            // Subscribe to connection state events.
+            this.OptionsConnectionChange();
+            this.mainScreen.ConnectionStateEvent += this.OptionsConnectionChange;
 
-            // Subscribe to menu bar changes.
-            if (!this.app.NoButtons)
+            // Subscribe to the ready event.
+            if (!(this.ready = this.app.BackEnd.Ready))
             {
-                this.mainScreen.MenuBarSetEvent += () => this.menuBarCheckBox.Checked = true;
+                this.app.BackEnd.OnReady += () => { this.ready = true; };
             }
+
+            // Subscribe to terminal name changes.
+            this.app.TerminalName.Register(this.BackEndChangedTerminalName);
+
+            // Localize an error message.
+            I18n.LocalizeGlobal(UnknownCodePageError, "Unknown host code page");
+
+            // Register our tour.
+            var nodes = new[]
+            {
+                ((Control)this.optionsTab, (int?)null, Orientation.Centered),
+                (this.optionsSampleGroupBox, null, Orientation.UpperRight),
+                (this.displayGroupBox, null, Orientation.UpperLeft),
+                (this.opacityGroupBox, null, Orientation.UpperLeft),
+                (this.modelGroupBox, null, Orientation.UpperLeft),
+                (this.terminalNameGroupBox, null, Orientation.LowerLeft),
+                (this.miscGroupBox, null, Orientation.LowerLeft),
+                (this.cursorGroupBox, null, Orientation.UpperRight),
+                (this.codePageGroupBox, null, Orientation.UpperRight),
+                (this.printerSessionGroupBox, null, Orientation.LowerRight),
+                (this.descriptionGroupBox, null, Orientation.LowerRight),
+            };
+            this.RegisterTour(this.optionsTab, nodes);
+        }
+
+        /// <summary>
+        /// Process a change in connection state.
+        /// </summary>
+        private void OptionsConnectionChange()
+        {
+            this.connected = this.app.ConnectionState != ConnectionState.NotConnected;
+            string GroupBoxText(string groupBoxName) => I18n.Get(I18n.Combine(nameof(Settings), I18n.FormName, groupBoxName));
+            string DynamicText(string groupBoxText) => this.connected ? groupBoxText + " - " + I18n.Get(Message.DeferredUntilDisconnected) : groupBoxText;
+
+            this.modelGroupBox.Text = DynamicText(GroupBoxText(nameof(this.modelGroupBox)));
+            this.displayGroupBox.Text = DynamicText(GroupBoxText(nameof(this.displayGroupBox)));
+            this.terminalNameGroupBox.Text = DynamicText(GroupBoxText(nameof(this.terminalNameGroupBox)));
+        }
+
+        /// <summary>
+        /// Paint new screen mode parameters into the UI.
+        /// </summary>
+        /// <param name="model">Model number.</param>
+        /// <param name="oversize">Oversize mode.</param>
+        /// <param name="oversizeRows">Oversize rows.</param>
+        /// <param name="oversizeColumns">Oversize columns.</param>
+        /// <param name="color">Color mode.</param>
+        /// <param name="extended">Extended mode.</param>
+        private void PropagateScreenModeToUI(int model, bool oversize, int oversizeRows, int oversizeColumns, bool color, bool extended)
+        {
+            // Set the model.
+            var modelDimensions = this.app.ModelsDb.Models.Values.FirstOrDefault(m => m.Model == model);
+            if (modelDimensions == null)
+            {
+                modelDimensions = new ModelDimensions(2, 24, 80);
+            }
+
+            this.SafeControlModify(this.modelComboBox, () => this.modelComboBox.SelectedItem = modelDimensions);
+
+            // Set oversize.
+            this.oversizeCheckBox.Checked = oversize;
+            this.oversizeCheckBox.Enabled = !this.connected && extended;
+            this.rowsUpDown.Enabled = this.oversizeCheckBox.Enabled && this.oversizeCheckBox.Checked;
+            this.rowsUpDown.Minimum = modelDimensions.Rows;
+            this.SafeControlModify(this.rowsUpDown, () => this.rowsUpDown.Value = oversize ? oversizeRows : modelDimensions.Rows);
+            this.columnsUpDown.Enabled = this.oversizeCheckBox.Enabled && this.oversizeCheckBox.Checked;
+            this.columnsUpDown.Minimum = modelDimensions.Columns;
+            this.SafeControlModify(this.columnsUpDown, () => this.columnsUpDown.Value = oversize ? oversizeColumns : modelDimensions.Columns);
+
+            // Set color mode.
+            this.colorMode.Value = color ? ColorModeEnum.Color : ColorModeEnum.Monochrome;
+
+            // Only change the Extended check box if override is in effect.
+            this.extendedMode = extended;
+            if (!this.overrideCheckBox.Checked)
+            {
+                this.extendedCheckBox.Checked = extended;
+            }
+        }
+
+        /// <summary>
+        /// Set the emulation settings from a given profile.
+        /// </summary>
+        /// <param name="profile">New profile.</param>
+        private void EmulationSet(Profile profile)
+        {
+            // Handle the profile type.
+            this.isFullProfile = profile.ProfileType == ProfileType.Full;
+            this.displayGroupBox.Enabled = this.isFullProfile;
+            this.opacityGroupBox.Enabled = this.isFullProfile;
+            this.modelGroupBox.Enabled = this.isFullProfile;
+            this.terminalNameGroupBox.Enabled = this.isFullProfile;
+            this.miscGroupBox.Enabled = this.isFullProfile;
+            this.codePageGroupBox.Enabled = this.isFullProfile;
+
+            // Set the code page.
+            var index = this.app.CodePageDb.Index(profile.HostCodePage);
+            if (index < 0)
+            {
+                this.ProfileManager.ProfileError(I18n.Get(UnknownCodePageError) + $" '{profile.HostCodePage}'");
+                index = this.app.CodePageDb.Index(Profile.DefaultProfile.HostCodePage);
+            }
+
+            if (this.codePageListBox.SelectedIndex != index)
+            {
+                this.SafeControlModify(this.codePageListBox, () =>
+                {
+                    this.codePageListBox.SelectedIndex = index;
+                });
+            }
+
+            // Set the opacity.
+            this.opacityTrackBar.Value = profile.OpacityPercent;
+            this.SetOpacity(profile.OpacityPercent);
+
+            // Set model, oversize, color mode.
+            this.PropagateScreenModeToUI(
+                profile.Model,
+                profile.Oversize.HasValue(),
+                profile.Oversize.Rows,
+                profile.Oversize.Columns,
+                profile.ColorMode,
+                profile.ExtendedMode);
+
+            // Set terminal override.
+            this.overrideCheckBox.Checked = !string.IsNullOrEmpty(profile.TerminalNameOverride);
+            this.overrideTextBox.Enabled = !this.connected && this.overrideCheckBox.Checked;
+            this.extendedCheckBox.Enabled = !this.connected && !this.overrideCheckBox.Checked;
+            if (this.overrideCheckBox.Checked)
+            {
+                this.overrideTextBox.Text = profile.TerminalNameOverride;
+            }
+
+            this.cursorBlinkCheckBox.Checked = profile.CursorBlink;
+            this.cursorType.Value = profile.CursorType;
+            this.crosshairCursorCheckBox.Checked = profile.CrosshairCursor;
+            this.monoCaseCheckBox.Checked = profile.Monocase;
+        }
+
+        /// <summary>
+        /// The contents of the terminal override text box have been validated.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void OverrideTextBoxValidated(object sender, EventArgs e)
+        {
+            this.ProfileManager.PushAndSave((current) => current.TerminalNameOverride = this.overrideTextBox.Text, ChangeName(B3270.Setting.TermName));
+        }
+
+        /// <summary>
+        /// Change handler for the Model combo box.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void ModelBoxChanged(object sender, EventArgs e)
+        {
+            if (this.lockedControls.Contains(sender))
+            {
+                return;
+            }
+
+            var modelDimensions = this.modelComboBox.SelectedItem as ModelDimensions;
+            this.ProfileManager.PushAndSave(
+                (current) =>
+                {
+                    current.Model = modelDimensions.Model;
+                    current.Oversize = new Profile.OversizeClass();
+                },
+                ChangeName(ChangeKeyword.Model));
+        }
+
+        /// <summary>
+        /// Updates the rows and columns in the profile.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        private void UpdateRowsCols(object sender)
+        {
+            if (!this.lockedControls.Contains(sender))
+            {
+                var newOversize = new Profile.OversizeClass { Rows = (int)this.rowsUpDown.Value, Columns = (int)this.columnsUpDown.Value };
+                var dimensions = this.modelComboBox.SelectedItem as ModelDimensions;
+                if (newOversize.Rows == dimensions.Rows && newOversize.Columns == dimensions.Columns)
+                {
+                    newOversize = new Profile.OversizeClass { Rows = 0, Columns = 0 };
+                }
+
+                this.ProfileManager.PushAndSave(
+                    (current) => current.Oversize = newOversize,
+                    ChangeName(ChangeKeyword.Model));
+            }
+        }
+
+        /// <summary>
+        /// The value of the oversize rows changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void RowsUpDownValueChanged(object sender, EventArgs e)
+        {
+            this.columnsUpDown.Maximum = OversizeMax / this.rowsUpDown.Value;
+            this.UpdateRowsCols(sender);
+        }
+
+        /// <summary>
+        /// The value of the oversize columns changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void ColumnsUpDownValueChanged(object sender, EventArgs e)
+        {
+            this.rowsUpDown.Maximum = OversizeMax / this.columnsUpDown.Value;
+            this.UpdateRowsCols(sender);
+        }
+
+        /// <summary>
+        /// The Oversize check box was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void OversizeCheckBoxClick(object sender, EventArgs e)
+        {
+            this.rowsUpDown.Enabled = this.oversizeCheckBox.Checked;
+            this.columnsUpDown.Enabled = this.oversizeCheckBox.Checked;
+            this.rowsUpDown.Minimum = this.UiModelDimensions.Rows;
+            this.columnsUpDown.Minimum = this.UiModelDimensions.Columns;
+            this.SafeControlModify(this.rowsUpDown, () => this.rowsUpDown.Value = this.UiModelDimensions.Rows);
+            this.SafeControlModify(this.columnsUpDown, () => this.columnsUpDown.Value = this.UiModelDimensions.Columns);
+
+            this.ProfileManager.PushAndSave(
+                (current) =>
+                {
+                    if (this.oversizeCheckBox.Checked)
+                    {
+                        current.Oversize = new Profile.OversizeClass
+                        {
+                            Rows = this.UiModelDimensions.Rows,
+                            Columns = this.UiModelDimensions.Columns,
+                        };
+                    }
+                    else
+                    {
+                        current.Oversize = new Profile.OversizeClass();
+                    }
+                },
+                ChangeName(ChangeKeyword.Model));
+        }
+
+        /// <summary>
+        /// The terminal name override check box was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void OverrideCheckBoxClick(object sender, EventArgs e)
+        {
+            if (this.overrideCheckBox.Checked)
+            {
+                // Override on.
+                this.overrideTextBox.Enabled = true;
+                this.extendedCheckBox.Enabled = false;
+            }
+            else
+            {
+                // Override off.
+                this.overrideTextBox.Enabled = false;
+                this.extendedCheckBox.Enabled = true;
+                this.extendedCheckBox.Checked = this.extendedMode;
+
+                this.ProfileManager.PushAndSave((current) => current.TerminalNameOverride = string.Empty, ChangeName(B3270.Setting.TermName));
+            }
+        }
+
+        /// <summary>
+        /// The Extended check box was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void ExtendedCheckBoxClick(object sender, EventArgs e)
+        {
+            this.extendedMode = this.extendedCheckBox.Checked;
+            this.ProfileManager.PushAndSave((current) => current.ExtendedMode = this.extendedMode, ChangeName(ChangeKeyword.Model));
+        }
+
+        /// <summary>
+        /// The back end indicated a terminal name change.
+        /// </summary>
+        /// <param name="nameAndOverride">Terminal name and override.</param>
+        private void BackEndChangedTerminalName((string, bool) nameAndOverride)
+        {
+            this.overrideTextBox.Text = nameAndOverride.Item1;      // name
+            this.overrideCheckBox.Checked = nameAndOverride.Item2;  // override
+        }
+
+        /// <summary>
+        /// The color mode changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void ColorModeChanged(object sender, EventArgs e)
+        {
+            // Tell everyone about the mode change.
+            this.ColorModeChangedEvent(this.ColorMode);
+
+            // Change the profile.
+            this.ProfileManager.PushAndSave((current) => current.ColorMode = this.ColorMode, ChangeName(ChangeKeyword.ColorMode));
+        }
+
+        /// <summary>
+        /// The code page index (UI control) changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void CodePageChanged(object sender, EventArgs e)
+        {
+            if (!(this.codePageListBox.SelectedItem is string codePage))
+            {
+                return;
+            }
+
+            if (this.lockedControls.Contains(this.codePageListBox))
+            {
+                return;
+            }
+
+            var canonicalName = this.app.CodePageDb.CanonicalName(codePage);
+            if (canonicalName != codePage)
+            {
+                this.codePageListBox.SelectedIndex = this.app.CodePageDb.Index(canonicalName);
+            }
+
+            this.ProfileManager.PushAndSave((current) => current.HostCodePage = canonicalName, ChangeName(B3270.Setting.CodePage));
+        }
+
+        /// <summary>
+        /// Set the window opacity.
+        /// </summary>
+        /// <param name="percent">Opacity percent.</param>
+        private void SetOpacity(int percent)
+        {
+            this.opacityLabel.Text = $"{percent}";
+        }
+
+        /// <summary>
+        /// The opacity scroll changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void OpacityScroll(object sender, EventArgs e)
+        {
+            var trackBar = sender as TrackBar;
+            this.SetOpacity(trackBar.Value);
+
+            // Set the opacity timer to go off 2 seconds after the last scroll event.
+            if (this.opacityTimer.Enabled)
+            {
+                this.opacityTimer.Stop();
+            }
+
+            this.opacityTimer.Start();
+        }
+
+        /// <summary>
+        /// The opacity timer ticked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void OpacityTimerTick(object sender, EventArgs e)
+        {
+            this.ProfileManager.PushAndSave((current) => current.OpacityPercent = this.opacityTrackBar.Value, ChangeName("opacity"));
         }
 
         /// <summary>
@@ -87,140 +741,8 @@ namespace Wx3270
         private void ProfileOptionsChanged(Profile oldProfile, Profile newProfile)
         {
             // Set up the GUI.
+            this.EmulationSet(newProfile);
             this.OptionsSet(newProfile);
-
-            // Tell the host about the screen settings.
-            this.ApplyOptionsFromProfile(oldProfile, newProfile);
-        }
-
-        /// <summary>
-        /// Merge the option settings.
-        /// </summary>
-        /// <param name="toProfile">Profile to merge into.</param>
-        /// <param name="fromProfile">Profile to merge from.</param>
-        /// <param name="importType">Import type.</param>
-        /// <returns>True if a merge was needed.</returns>
-        private bool MergeOptions(Profile toProfile, Profile fromProfile, ImportType importType)
-        {
-            // Note: We do not merge the description.
-            if (toProfile.PrinterType == fromProfile.PrinterType &&
-                toProfile.Printer == fromProfile.Printer &&
-                toProfile.PrinterCodePage == fromProfile.PrinterCodePage &&
-                toProfile.PrinterOptions == fromProfile.PrinterOptions &&
-                toProfile.NopInterval == fromProfile.NopInterval &&
-                toProfile.Retry == fromProfile.Retry &&
-                toProfile.PreferIpv4 == fromProfile.PreferIpv4 &&
-                toProfile.PreferIpv6 == fromProfile.PreferIpv6 &&
-                toProfile.ScrollBar == fromProfile.ScrollBar &&
-                toProfile.MenuBar == fromProfile.MenuBar)
-            {
-                return false;
-            }
-
-            toProfile.PrinterType = fromProfile.PrinterType;
-            toProfile.Printer = fromProfile.Printer;
-            toProfile.PrinterCodePage = fromProfile.PrinterCodePage;
-            toProfile.PrinterOptions = fromProfile.PrinterOptions;
-            toProfile.NopInterval = fromProfile.NopInterval;
-            toProfile.Retry = fromProfile.Retry;
-            toProfile.PreferIpv4 = fromProfile.PreferIpv4;
-            toProfile.PreferIpv6 = fromProfile.PreferIpv6;
-            toProfile.ScrollBar = fromProfile.ScrollBar;
-            toProfile.MenuBar = fromProfile.MenuBar;
-            return true;
-        }
-
-        /// <summary>
-        /// Apply new Options settings from the profile.
-        /// </summary>
-        /// <param name="oldProfile">Old profile.</param>
-        /// <param name="newProfile">New profile.</param>
-        private void ApplyOptionsFromProfile(Profile oldProfile, Profile newProfile)
-        {
-            var settings = new List<string>();
-
-            if (oldProfile == null || oldProfile.HostCodePage != newProfile.HostCodePage)
-            {
-                settings.AddRange(new[] { B3270.Setting.CodePage, newProfile.HostCodePage });
-            }
-
-            if (oldProfile == null || oldProfile.CursorType != newProfile.CursorType)
-            {
-                settings.AddRange(new[] { B3270.Setting.AltCursor, B3270.ToggleArgument.Action(newProfile.CursorType == CursorType.Underscore) });
-            }
-
-            if (oldProfile == null || oldProfile.CrosshairCursor != newProfile.CrosshairCursor)
-            {
-                settings.AddRange(new[] { B3270.Setting.Crosshair, B3270.ToggleArgument.Action(newProfile.CrosshairCursor) });
-            }
-
-            if (oldProfile == null || oldProfile.CursorBlink != newProfile.CursorBlink)
-            {
-                settings.AddRange(new[] { B3270.Setting.CursorBlink, B3270.ToggleArgument.Action(newProfile.CursorBlink) });
-            }
-
-            if (oldProfile == null || oldProfile.Monocase != newProfile.Monocase)
-            {
-                settings.AddRange(new[] { B3270.Setting.MonoCase, B3270.ToggleArgument.Action(newProfile.Monocase) });
-            }
-
-            if (oldProfile == null || oldProfile.Typeahead != newProfile.Typeahead)
-            {
-                settings.AddRange(new[] { B3270.Setting.Typeahead, B3270.ToggleArgument.Action(newProfile.Typeahead) });
-            }
-
-            if (oldProfile == null || oldProfile.ShowTiming != newProfile.ShowTiming)
-            {
-                settings.AddRange(new[] { B3270.Setting.ShowTiming, B3270.ToggleArgument.Action(newProfile.ShowTiming) });
-            }
-
-            if (oldProfile == null || oldProfile.AlwaysInsert != newProfile.AlwaysInsert)
-            {
-                settings.AddRange(new[] { B3270.Setting.AlwaysInsert, B3270.ToggleArgument.Action(newProfile.AlwaysInsert) });
-            }
-
-            if (oldProfile == null || oldProfile.Printer != newProfile.Printer)
-            {
-                settings.AddRange(new[] { B3270.Setting.PrinterName, newProfile.Printer });
-            }
-
-            if (oldProfile == null || oldProfile.PrinterOptions != newProfile.PrinterOptions)
-            {
-                var sentOptions = this.mainScreen.ActionsDialog.Pr3287TraceOptions + newProfile.PrinterOptions;
-                if (this.app.Restricted(Restrictions.ExternalFiles))
-                {
-                    // Remove the pr3287 trace option.
-                    sentOptions = Regex.Replace(sentOptions, Pr3287.CommandLineOption.TraceRegex, string.Empty);
-                }
-
-                settings.AddRange(new[] { B3270.Setting.PrinterOptions, sentOptions });
-            }
-
-            if (oldProfile == null || oldProfile.PrinterCodePage != newProfile.PrinterCodePage)
-            {
-                settings.AddRange(new[] { B3270.Setting.PrinterCodePage, newProfile.PrinterCodePage });
-            }
-
-            if (oldProfile == null || oldProfile.NopInterval != newProfile.NopInterval)
-            {
-                settings.AddRange(new[] { B3270.Setting.NopSeconds, newProfile.NopInterval.ToString() });
-            }
-
-            if (oldProfile == null || oldProfile.Retry != newProfile.Retry)
-            {
-                settings.AddRange(new[] { B3270.Setting.Retry, B3270.ToggleArgument.Action(newProfile.Retry) });
-            }
-
-            if (settings.Count != 0)
-            {
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, settings), ErrorBox.Completion(I18n.Get(Title.Settings)));
-            }
-
-            if (!newProfile.Maximize && oldProfile != null)
-            {
-                // Force normal window if the profile says to, and this is not the initial load.
-                this.mainScreen.Restore();
-            }
         }
 
         /// <summary>
@@ -256,7 +778,7 @@ namespace Wx3270
             // Handle the profile type.
             var isFull = profile.ProfileType == ProfileType.Full;
             this.optionsSampleGroupBox.Enabled = isFull;
-            this.CursorGroupBox.Enabled = isFull;
+            this.cursorGroupBox.Enabled = isFull;
             this.printerSessionGroupBox.Enabled = isFull;
             this.windowTitleLabel.Enabled = isFull;
             this.titleTextBox.Enabled = isFull;
@@ -264,26 +786,23 @@ namespace Wx3270
             // Set the cursor type.
             this.cursorType.Value = profile.CursorType;
 
-            // Set the crosshair cursor.
-            this.crosshairCursorCheckBox.Checked = profile.CrosshairCursor;
-
-            // Set cursor blink.
-            this.cursorBlinkCheckBox.Checked = profile.CursorBlink;
-
-            // Set monocase.
-            this.MonoCaseCheckBox.Checked = profile.Monocase;
+            // Set the simple checkboxes.
+            var checkBoxes = new[]
+            {
+                (this.crosshairCursorCheckBox, profile.CrosshairCursor),
+                (this.cursorBlinkCheckBox, profile.CursorBlink),
+                (this.monoCaseCheckBox, profile.Monocase),
+                (this.typeaheadCheckBox, profile.Typeahead),
+                (this.showTimingCheckBox, profile.ShowTiming),
+                (this.alwaysInsertCheckBox, profile.AlwaysInsert),
+            };
+            foreach (var box in checkBoxes)
+            {
+                this.SafeControlModify(box.Item1, () => box.Item1.Checked = box.Item2);
+            }
 
             // Redraw the sample.
             this.optionsScreenSample.Invalidate();
-
-            // Set typeahead.
-            this.typeaheadCheckBox.Checked = profile.Typeahead;
-
-            // Set show timing.
-            this.showTimingCheckBox.Checked = profile.ShowTiming;
-
-            // Set always insert.
-            this.alwaysInsertCheckBox.Checked = profile.AlwaysInsert;
 
             // Set the printer type and name/path.
             this.printerType.Value = profile.PrinterType;
@@ -328,6 +847,16 @@ namespace Wx3270
 
             // Set menu bar.
             this.menuBarCheckBox.Checked = profile.MenuBar;
+
+            // Set up the follower checkbox.
+            if (profile.ReadOnly)
+            {
+                this.followerCheckBox.Checked = !this.app.Detached;
+            }
+            else
+            {
+                this.followerCheckBox.Visible = false;
+            }
         }
 
         /// <summary>
@@ -341,13 +870,7 @@ namespace Wx3270
             this.optionsScreenSample.Invalidate();
 
             // Change the profile.
-            if (this.ProfileManager.PushAndSave((current) => current.CursorType = this.cursorType.Value, this.ChangeName(B3270.Setting.AltCursor)))
-            {
-                // Tell the emulator.
-                this.BackEnd.RunAction(
-                    new BackEndAction(B3270.Action.Set, B3270.Setting.AltCursor, B3270.ToggleArgument.Action(this.CursorType == CursorType.Underscore)),
-                    ErrorBox.Completion(I18n.Get(Title.Settings)));
-            }
+            this.ProfileManager.PushAndSave((current) => current.CursorType = this.cursorType.Value, ChangeName(B3270.Setting.AltCursor));
         }
 
         /// <summary>
@@ -369,7 +892,7 @@ namespace Wx3270
                     current.PrinterType = this.printerType.Value;
                     current.Printer = string.Empty;
                 },
-                this.ChangeName(ChangeKeyword.PrinterType)))
+                ChangeName(ChangeKeyword.PrinterType)))
             {
                 // Change visibility and values.
                 this.savePathLabel.Enabled = this.printerType.Value == PrinterType.File;
@@ -395,56 +918,49 @@ namespace Wx3270
 
             // Redraw the sample fields.
             var settingName = (string)checkBox.Tag;
-            switch (settingName)
+            if (new[] { B3270.Setting.Crosshair, B3270.Setting.CursorBlink, B3270.Setting.MonoCase }.Contains(settingName))
             {
-                case B3270.Setting.Crosshair:
-                case B3270.Setting.CursorBlink:
-                case B3270.Setting.MonoCase:
-                    this.optionsScreenSample.Invalidate();
-                    break;
-                default:
-                    break;
+                this.optionsScreenSample.Invalidate();
             }
 
-            // Change the profile.
-            if (this.ProfileManager.PushAndSave(
-                (current) =>
-                {
-                    switch (settingName)
-                    {
-                        case B3270.Setting.Crosshair:
-                            current.CrosshairCursor = checkBox.Checked;
-                            break;
-                        case B3270.Setting.CursorBlink:
-                            current.CursorBlink = checkBox.Checked;
-                            break;
-                        case B3270.Setting.MonoCase:
-                            current.Monocase = checkBox.Checked;
-                            break;
-                        case B3270.Setting.Typeahead:
-                            current.Typeahead = checkBox.Checked;
-                            break;
-                        case B3270.Setting.ShowTiming:
-                            current.ShowTiming = checkBox.Checked;
-                            break;
-                        case B3270.Setting.AlwaysInsert:
-                            current.AlwaysInsert = checkBox.Checked;
-                            break;
-                        case B3270.Setting.Retry:
-                            current.Retry = checkBox.Checked;
-                            break;
-                        case B3270.Setting.PreferIpv4:
-                            current.PreferIpv4 = checkBox.Checked;
-                            break;
-                        case B3270.Setting.PreferIpv6:
-                            current.PreferIpv6 = checkBox.Checked;
-                            break;
-                    }
-                },
-                this.ChangeName(settingName)))
+            // If this came from the user clicking on the UI, change the profile.
+            if (!this.lockedControls.Contains(checkBox))
             {
-                // Tell the emulator.
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, settingName, B3270.ToggleArgument.Action(checkBox.Checked)), ErrorBox.Completion(I18n.Get(Title.Settings)));
+                this.ProfileManager.PushAndSave(
+                    (current) =>
+                    {
+                        switch (settingName)
+                        {
+                            case B3270.Setting.Crosshair:
+                                current.CrosshairCursor = checkBox.Checked;
+                                break;
+                            case B3270.Setting.CursorBlink:
+                                current.CursorBlink = checkBox.Checked;
+                                break;
+                            case B3270.Setting.MonoCase:
+                                current.Monocase = checkBox.Checked;
+                                break;
+                            case B3270.Setting.Typeahead:
+                                current.Typeahead = checkBox.Checked;
+                                break;
+                            case B3270.Setting.ShowTiming:
+                                current.ShowTiming = checkBox.Checked;
+                                break;
+                            case B3270.Setting.AlwaysInsert:
+                                current.AlwaysInsert = checkBox.Checked;
+                                break;
+                            case B3270.Setting.Retry:
+                                current.Retry = checkBox.Checked;
+                                break;
+                            case B3270.Setting.PreferIpv4:
+                                current.PreferIpv4 = checkBox.Checked;
+                                break;
+                            case B3270.Setting.PreferIpv6:
+                                current.PreferIpv6 = checkBox.Checked;
+                                break;
+                        }
+                    },
+                    ChangeName(settingName));
             }
         }
 
@@ -461,40 +977,19 @@ namespace Wx3270
             }
 
             var settingName = (string)checkBox.Tag;
-            System.Drawing.Size? size = null;
             switch (settingName)
             {
                 case ChangeKeyword.ScrollBar:
                     if (!this.app.NoScrollBar)
                     {
-                        size = this.mainScreen.ToggleScrollBar(checkBox.Checked);
-                        this.ProfileManager.PushAndSave(
-                            (current) =>
-                            {
-                                current.ScrollBar = checkBox.Checked;
-                                if (size != null)
-                                {
-                                    current.Size = size.Value;
-                                }
-                            },
-                            this.ChangeName(settingName));
+                        this.mainScreen.ScrollBarSwitch(checkBox.Checked);
                     }
 
                     break;
                 case ChangeKeyword.MenuBar:
                     if (!this.app.NoButtons)
                     {
-                        size = this.mainScreen.ToggleFixedMenuBar(checkBox.Checked);
-                        this.ProfileManager.PushAndSave(
-                            (current) =>
-                            {
-                                current.MenuBar = checkBox.Checked;
-                                if (size != null)
-                                {
-                                    current.Size = size.Value;
-                                }
-                            },
-                            this.ChangeName(settingName));
+                        this.mainScreen.FixedMenuBarSwitch(checkBox.Checked);
                     }
 
                     break;
@@ -520,10 +1015,7 @@ namespace Wx3270
         private void PrinterComboBoxSelectionChangeCommitted(object sender, EventArgs e)
         {
             var printer = this.printerComboBox.SelectedItem.ToString();
-            if (this.ProfileManager.PushAndSave((current) => current.Printer = printer, this.ChangeName(B3270.Setting.PrinterName)))
-            {
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.PrinterName, printer), ErrorBox.Completion(I18n.Get(Title.Settings)));
-            }
+            this.ProfileManager.PushAndSave((current) => current.Printer = printer, ChangeName(B3270.Setting.PrinterName));
         }
 
         /// <summary>
@@ -534,10 +1026,7 @@ namespace Wx3270
         private void PrinterCodePageValidated(object sender, EventArgs e)
         {
             var codePage = this.printerCodePageTextBox.Text.Trim();
-            if (this.ProfileManager.PushAndSave((current) => current.PrinterCodePage = codePage, this.ChangeName(B3270.Setting.PrinterCodePage)))
-            {
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.PrinterCodePage, codePage), ErrorBox.Completion(I18n.Get(Title.Settings)));
-            }
+            this.ProfileManager.PushAndSave((current) => current.PrinterCodePage = codePage, ChangeName(B3270.Setting.PrinterCodePage));
         }
 
         /// <summary>
@@ -547,7 +1036,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void PrinterOptionsValidated(object sender, EventArgs e)
         {
-            var options = this.mainScreen.ActionsDialog.Pr3287TraceOptions + this.printerOptionsTextBox.Text.Trim();
+            var options = this.app.Pr3287TraceOptions + this.printerOptionsTextBox.Text.Trim();
             var sentOptions = options;
             if (this.app.Restricted(Restrictions.ExternalFiles))
             {
@@ -555,10 +1044,7 @@ namespace Wx3270
                 sentOptions = Regex.Replace(options, Pr3287.CommandLineOption.TraceRegex, string.Empty);
             }
 
-            if (this.ProfileManager.PushAndSave((current) => current.PrinterOptions = options, this.ChangeName(B3270.Setting.PrinterOptions)))
-            {
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.PrinterOptions, sentOptions), ErrorBox.Completion(I18n.Get(Title.Settings)));
-            }
+            this.ProfileManager.PushAndSave((current) => current.PrinterOptions = options, ChangeName(B3270.Setting.PrinterOptions));
         }
 
         /// <summary>
@@ -568,7 +1054,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void DescriptionTextBoxValidated(object sender, EventArgs e)
         {
-            this.ProfileManager.PushAndSave((current) => current.Description = this.descriptionTextBox.Text, this.ChangeName(ChangeKeyword.Description));
+            this.ProfileManager.PushAndSave((current) => current.Description = this.descriptionTextBox.Text, ChangeName(ChangeKeyword.Description));
         }
 
         /// <summary>
@@ -578,7 +1064,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void TitleTextBoxValidated(object sender, EventArgs e)
         {
-            if (this.ProfileManager.PushAndSave((current) => current.WindowTitle = this.titleTextBox.Text, this.ChangeName(ChangeKeyword.WindowTitle)))
+            if (this.ProfileManager.PushAndSave((current) => current.WindowTitle = this.titleTextBox.Text, ChangeName(ChangeKeyword.WindowTitle)))
             {
                 this.mainScreen.Retitle();
             }
@@ -597,56 +1083,8 @@ namespace Wx3270
                     return;
                 case DialogResult.OK:
                     this.savePathTextBox.Text = this.printerSaveFolderBrowserDialog.SelectedPath;
-                    this.ProfileManager.PushAndSave((current) => current.Printer = this.savePathTextBox.Text, this.ChangeName(ChangeKeyword.PrinterSavePath));
+                    this.ProfileManager.PushAndSave((current) => current.Printer = this.savePathTextBox.Text, ChangeName(ChangeKeyword.PrinterSavePath));
                     break;
-            }
-        }
-
-        /// <summary>
-        /// A setting changed.
-        /// </summary>
-        /// <param name="settingName">Setting name.</param>
-        /// <param name="settingDictionary">Setting dictionary (values).</param>
-        private void OptionsSettingChanged(string settingName, SettingsDictionary settingDictionary)
-        {
-            if (!settingDictionary.TryGetValue(settingName, out string stringValue))
-            {
-                return;
-            }
-
-            var changeName = this.ProfileManager.ChangeName(string.Format("{0} ({1})", I18n.Get(SettingPath(settingName)), this.ProfileManager.ExternalText));
-            switch (settingName)
-            {
-                case B3270.Setting.PrinterName:
-                    this.SetPrinterName(stringValue);
-                    this.ProfileManager.PushAndSave((current) => current.Printer = stringValue, changeName);
-                    break;
-                case B3270.Setting.PrinterOptions:
-                    // Strip trace options.
-                    var trace = this.mainScreen.ActionsDialog.Pr3287TraceOptions;
-                    if (!string.IsNullOrEmpty(trace) && stringValue.StartsWith(trace))
-                    {
-                        stringValue = stringValue.Remove(0, trace.Length);
-                    }
-
-                    this.printerOptionsTextBox.Text = stringValue;
-                    this.ProfileManager.PushAndSave((current) => current.PrinterOptions = stringValue, changeName);
-                    break;
-                case B3270.Setting.PrinterCodePage:
-                    this.printerCodePageTextBox.Text = stringValue;
-                    this.ProfileManager.PushAndSave((current) => current.PrinterCodePage = stringValue, changeName);
-                    break;
-                case B3270.Setting.NopSeconds:
-                    if (!settingDictionary.TryGetValue(settingName, out int intValue))
-                    {
-                        return;
-                    }
-
-                    this.nopCheckBox.Checked = intValue != 0;
-                    this.ProfileManager.PushAndSave((current) => current.NopInterval = intValue, changeName);
-                    break;
-                default:
-                    return;
             }
         }
 
@@ -658,10 +1096,17 @@ namespace Wx3270
         private void NopClick(object sender, EventArgs e)
         {
             var interval = this.nopCheckBox.Checked ? 30 : 0;
-            if (this.ProfileManager.PushAndSave((current) => current.NopInterval = interval, this.ChangeName(B3270.Setting.NopSeconds)))
-            {
-                this.BackEnd.RunAction(new BackEndAction(B3270.Action.Set, B3270.Setting.NopSeconds, interval), ErrorBox.Completion(I18n.Get(Title.Settings)));
-            }
+            this.ProfileManager.PushAndSave((current) => current.NopInterval = interval, ChangeName(B3270.Setting.NopSeconds));
+        }
+
+        /// <summary>
+        /// The Follower button was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void FollowerClick(object sender, EventArgs e)
+        {
+            this.app.Detached = !this.followerCheckBox.Checked;
         }
     }
 }

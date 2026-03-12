@@ -34,7 +34,7 @@ namespace Wx3270
         /// <summary>
         /// The default font size.
         /// </summary>
-        public const int DefaultEmSize = 10;
+        public const int DefaultEmSize = 14;
 
         /// <summary>
         /// The fallback font name.
@@ -155,6 +155,15 @@ namespace Wx3270
             return this.Name == other.Name
                 && this.EmSize == other.EmSize
                 && this.Style == other.Style;
+        }
+
+        /// <summary>
+        /// String conversion.
+        /// </summary>
+        /// <returns>String representation.</returns>
+        public override string ToString()
+        {
+            return $"{this.Name} {this.Style} {this.EmSize}";
         }
     }
 }

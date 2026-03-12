@@ -8,8 +8,8 @@ namespace Wx3270
     using System.Collections.Generic;
     using System.Linq;
     using System.Net;
-    using System.Text.RegularExpressions;
     using System.Windows.Forms;
+    using I18nBase;
 
     /// <summary>
     /// Settings for listening ports.
@@ -45,6 +45,9 @@ namespace Wx3270
             { B3270.Setting.Httpd, HttpdDefaultPort },
         };
 
+        /// <summary>
+        /// The display names for each listening port.
+        /// </summary>
         private readonly Dictionary<string, string> displayType = new Dictionary<string, string>
         {
             { B3270.Setting.ScriptPort, "s3270" },
@@ -55,6 +58,67 @@ namespace Wx3270
         /// Gets the listening port names.
         /// </summary>
         private IEnumerable<string> PortNames => this.defaultPort.Keys;
+
+        /// <summary>
+        /// Static localization.
+        /// </summary>
+        [I18nInit]
+        public static void LocalizeListenSettings()
+        {
+            // Set up the tour.
+#pragma warning disable SA1118 // Parameter should not span multiple lines
+#pragma warning disable SA1137 // Elements should have the same indentation
+
+            // Global instructions.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(serversTab)), "Tour: Server settings");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(serversTab)),
+@"Use this tab to change the protocols that wx3270 listens for.
+
+These protocols allow wx3270 to be controlled by an outside program.");
+
+            // s3270 server.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(s3270Box)), "s3270 server");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(s3270Box)),
+@"The s3270 server listens for connections using the s3270 protocol.
+
+Details of this protocol are on the x3270 Wiki.");
+
+            // HTTP server.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(httpdBox)), "HTTP server");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(httpdBox)),
+@"The HTTP server listens for connections using the HTTP protocol.
+
+Details of this protocol are on the x3270 Wiki.");
+
+            // Enable.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(s3270CheckBox)), "Enable the server");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(s3270CheckBox)),
+@"Click to turn the server on and off.");
+
+            // Address.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(s3270AddressBox)), "Address");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(s3270AddressBox)),
+@"Specify the address to listen on here.
+
+127.0.0.1 allows IPv4 connections from programs on your workstation.
+0.0.0.0 allows IPv4 connections from anywhere.
+::1 allows IPv6 connections from programs on your workstation.
+:: allows IPv6 connections from anywhere.");
+
+            // Port.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(s3270PortBox)), "TCP port");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(s3270PortBox)),
+@"Specify the TCP port to listen on here.");
+
+#pragma warning restore SA1137 // Elements should have the same indentation
+#pragma warning restore SA1118 // Parameter should not span multiple lines
+        }
 
         /// <summary>
         /// Initialize the Listen tab.
@@ -71,25 +135,22 @@ namespace Wx3270
                 }
             }
 
-            this.ProfileManager.ChangeTo += this.ListenProfileChange;
-            this.ProfileManager.RegisterMerge(ImportType.OtherSettingsReplace, this.MergeListen);
-            this.app.SettingChange.Register(
-                (settingName, settingDictonary) => this.Invoke(new MethodInvoker(() => this.ListenSettingChanged(settingName, settingDictonary))),
-                this.PortNames.ToArray());
+            this.ProfileManager.AddChangeTo(this.ProfileChange);
 
             // Set up a dummy listener editor for localization.
             new ServerEditor(string.Empty, string.Empty, string.Empty, null).Dispose();
-        }
 
-        /// <summary>
-        /// Format a listen parameter for the back end.
-        /// </summary>
-        /// <param name="address">Listen address.</param>
-        /// <param name="port">Listen port.</param>
-        /// <returns>Formatter parameter.</returns>
-        private static string ListenParam(IPAddress address, ushort port)
-        {
-            return "[" + address + "]:" + port;
+            // Register our tour.
+            var nodes = new[]
+            {
+                ((Control)this.serversTab, (int?)null, Orientation.Centered),
+                (this.s3270Box, null, Orientation.UpperLeftTight),
+                (this.httpdBox, null, Orientation.UpperRight),
+                (this.s3270CheckBox, null, Orientation.UpperLeft),
+                (this.s3270AddressBox, null, Orientation.UpperLeft),
+                (this.s3270PortBox, null, Orientation.UpperLeft),
+            };
+            this.RegisterTour(this.serversTab, nodes);
         }
 
         /// <summary>
@@ -113,22 +174,22 @@ namespace Wx3270
         /// <summary>
         /// The profile changed.
         /// </summary>
-        /// <param name="fromProfile">Old profile.</param>
-        /// <param name="profile">New profile.</param>
-        private void ListenProfileChange(Profile fromProfile, Profile profile)
+        /// <param name="oldProfile">Old profile.</param>
+        /// <param name="newProfile">New profile.</param>
+        private void ProfileChange(Profile oldProfile, Profile newProfile)
         {
-            this.serversTab.Enabled = profile.ProfileType == ProfileType.Full;
+            this.serversTab.Enabled = newProfile.ProfileType == ProfileType.Full;
             foreach (var portName in this.PortNames)
             {
                 if (!this.app.ListenLock[portName])
                 {
                     ListenPort oldListenPort = null;
-                    if (fromProfile != null && !fromProfile.ListenPort.TryGetValue(portName, out oldListenPort))
+                    if (oldProfile != null && !oldProfile.ListenPort.TryGetValue(portName, out oldListenPort))
                     {
                         oldListenPort = null;
                     }
 
-                    if (!profile.ListenPort.TryGetValue(portName, out ListenPort listenPort))
+                    if (!newProfile.ListenPort.TryGetValue(portName, out ListenPort listenPort))
                     {
                         listenPort = null;
                     }
@@ -139,99 +200,8 @@ namespace Wx3270
                     }
 
                     this.ListenPortProfileToUI(portName, listenPort);
-                    var toggleValue = listenPort != null ? ListenParam(listenPort.Address, listenPort.Port) : string.Empty;
-                    this.BackEnd.RunAction(
-                        new BackEndAction(B3270.Action.Set, portName, toggleValue),
-                        ErrorBox.Completion(I18n.Get(Title.Settings)));
                 }
             }
-        }
-
-        /// <summary>
-        /// Merge the listen settings.
-        /// </summary>
-        /// <param name="toProfile">Profile to merge into.</param>
-        /// <param name="fromProfile">Profile to merge from.</param>
-        /// <param name="importType">Import type.</param>
-        /// <returns>True if a merge was needed.</returns>
-        private bool MergeListen(Profile toProfile, Profile fromProfile, ImportType importType)
-        {
-            if (toProfile.ListenPort.SequenceEqual(fromProfile.ListenPort))
-            {
-                return false;
-            }
-
-            toProfile.ListenPort.Clear();
-            foreach (var kv in fromProfile.ListenPort)
-            {
-                toProfile.ListenPort[kv.Key] = (ListenPort)kv.Value.Clone();
-            }
-
-            return true;
-        }
-
-        /// <summary>
-        /// A setting changed, perhaps it is a listen value.
-        /// </summary>
-        /// <param name="settingName">Setting name.</param>
-        /// <param name="settingDictionary">Setting values.</param>
-        private void ListenSettingChanged(string settingName, SettingsDictionary settingDictionary)
-        {
-            if (!this.PortNames.Contains(settingName) || !settingDictionary.TryGetValue(settingName, out string value))
-            {
-                // Not one of our settings, or for some reason, not there.
-                return;
-            }
-
-            ListenPort newListenPort = null;
-            if (!string.IsNullOrEmpty(value))
-            {
-                var regex = new Regex(@"\[(?<address>.*)\]:(?<port>.*)");
-                var match = regex.Match(value);
-                if (!match.Success)
-                {
-                    ErrorBox.Show(string.Format(I18n.Get(Message.CantParseListen), settingName, value), I18n.Get(Title.Settings));
-                    return;
-                }
-
-                newListenPort = new ListenPort { Address = IPAddress.Parse(match.Groups["address"].Value), Port = ushort.Parse(match.Groups["port"].Value) };
-            }
-
-            if (this.app.ListenLock[settingName])
-            {
-                // Profile is locked for this port. Just update the UI.
-                this.ListenPortProfileToUI(settingName, newListenPort);
-                return;
-            }
-
-            if (!this.ProfileManager.Current.ListenPort.TryGetValue(settingName, out ListenPort oldListenPort))
-            {
-                oldListenPort = null;
-            }
-
-            if (newListenPort == null)
-            {
-                if (oldListenPort != null)
-                {
-                    if (this.ready)
-                    {
-                        this.ProfileManager.PushAndSave(
-                            (profile) => profile.ListenPort.Remove(settingName),
-                            this.ProfileManager.DisableName(settingName + SettingPath(ChangeKeyword.ListeningPort) + " (" + this.ProfileManager.ExternalText + ")"));
-                    }
-                }
-            }
-            else
-            {
-                if (this.ready)
-                {
-                    this.ProfileManager.PushAndSave(
-                        (profile) => profile.ListenPort[settingName] = newListenPort,
-                        this.ProfileManager.ChangeName(settingName + SettingPath(ChangeKeyword.ListeningPort) + " (" + this.ProfileManager.ExternalText + ")"));
-                }
-            }
-
-            this.ListenPortProfileToUI(settingName, newListenPort);
         }
 
         /// <summary>
@@ -252,7 +222,7 @@ namespace Wx3270
             c.Controls.OfType<TextBox>().Where(b => (string)b.Tag == AddressTag).First().Text = checkBox.Checked ? address.ToString() : string.Empty;
             c.Controls.OfType<TextBox>().Where(b => (string)b.Tag == PortTag).First().Text = checkBox.Checked ? port.ToString() : string.Empty;
 
-            if (this.ProfileManager.PushAndSave(
+            this.ProfileManager.PushAndSave(
                 (profile) =>
                 {
                     if (checkBox.Checked)
@@ -264,13 +234,7 @@ namespace Wx3270
                         profile.ListenPort.Remove(portName);
                     }
                 },
-                this.ProfileManager.ChangeName(portName + " " + I18n.Get(SettingPath(ChangeKeyword.ListenMode)))))
-            {
-                var toggleValue = checkBox.Checked ? ListenParam(address, port) : string.Empty;
-                this.BackEnd.RunAction(
-                    new BackEndAction(B3270.Action.Set, portName, toggleValue),
-                    ErrorBox.Completion(I18n.Get(Title.Settings)));
-            }
+                Wx3270.ProfileManager.ChangeName(this.displayType[portName]));
         }
 
         /// <summary>
@@ -346,17 +310,12 @@ namespace Wx3270
                     var port = ushort.Parse(editor.Port);
 
                     // Push and save.
-                    if (this.ProfileManager.PushAndSave(
+                    this.ProfileManager.PushAndSave(
                         (profile) =>
                         {
                             profile.ListenPort[type] = new ListenPort { Address = address, Port = port };
                         },
-                        this.ProfileManager.ChangeName(this.displayType[type])))
-                    {
-                        this.BackEnd.RunAction(
-                            new BackEndAction(B3270.Action.Set, type, ListenParam(address, port)),
-                            ErrorBox.Completion(I18n.Get(Title.Settings)));
-                    }
+                        Wx3270.ProfileManager.ChangeName(this.displayType[type]));
                 }
             }
         }

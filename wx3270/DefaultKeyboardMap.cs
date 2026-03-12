@@ -26,6 +26,16 @@ namespace Wx3270
                     { KeyMap<KeyboardMap>.Key(Keys.Oemplus, KeyboardModifier.Ctrl), new KeyboardMap { Actions = Constants.Action.StepEfont + "(" + Constants.Misc.Bigger + ")" } },
                     { KeyMap<KeyboardMap>.Key(Keys.OemMinus, KeyboardModifier.Ctrl), new KeyboardMap { Actions = Constants.Action.StepEfont + "(" + Constants.Misc.Smaller + ")" } },
                     { KeyMap<KeyboardMap>.Key(Keys.N, KeyboardModifier.Alt), new KeyboardMap { Actions = Constants.Action.MenuBar + "()", Exact = true } },
+                    { KeyMap<KeyboardMap>.Key(Keys.Return, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.Enter + "()" } },
+                    { KeyMap<KeyboardMap>.Key(KeyboardUtil.NumPadReturn, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.Enter + "()" } },
+                }
+            },
+            {
+                // 1.3 adds paste without margin.
+                new VersionClass() { Major = 1, Minor = 3 },
+                new KeyMap<KeyboardMap>
+                {
+                    { KeyMap<KeyboardMap>.Key(Keys.V, KeyboardModifier.Alt), new KeyboardMap { Actions = Constants.Action.Paste + "(" + B3270.PasteStringOption.NoMargin + ")", Exact = true } },
                 }
             },
         };
@@ -35,8 +45,8 @@ namespace Wx3270
         /// </summary>
         private static readonly KeyMap<KeyboardMap> DefaultKeyboardMap = new KeyMap<KeyboardMap>
         {
-            { KeyMap<KeyboardMap>.Key(Keys.Return, KeyboardModifier.Mode3270), new KeyboardMap { Actions = B3270.Action.Enter + "()" } },
-            { KeyMap<KeyboardMap>.Key(KeyboardUtil.NumPadReturn, KeyboardModifier.None | KeyboardModifier.Mode3270), new KeyboardMap { Actions = B3270.Action.Enter + "()" } },
+            { KeyMap<KeyboardMap>.Key(Keys.Return, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.Enter + "()" } },
+            { KeyMap<KeyboardMap>.Key(KeyboardUtil.NumPadReturn, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.Enter + "()" } },
             { KeyMap<KeyboardMap>.Key(Keys.Return, KeyboardModifier.Shift | KeyboardModifier.Mode3270), new KeyboardMap { Actions = B3270.Action.Newline + "()" } },
             { KeyMap<KeyboardMap>.Key(Keys.Back, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.Erase + "()" } },
             { KeyMap<KeyboardMap>.Key(Keys.Delete, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.Delete + "()" } },
@@ -61,7 +71,7 @@ namespace Wx3270
             { KeyMap<KeyboardMap>.Key(Keys.F2, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.PF + "(2)" } },
             { KeyMap<KeyboardMap>.Key(Keys.F3, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.PF + "(3)" } },
             { KeyMap<KeyboardMap>.Key(Keys.F4, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.PF + "(4)" } },
-            { KeyMap<KeyboardMap>.Key(Keys.F4, KeyboardModifier.Alt), new KeyboardMap { Actions = B3270.Action.Quit + "(-force)" } },
+            { KeyMap<KeyboardMap>.Key(Keys.F4, KeyboardModifier.Alt), new KeyboardMap { Actions = B3270.Action.Quit + "(" + B3270.QuitOption.Force + ")" } },
             { KeyMap<KeyboardMap>.Key(Keys.F5, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.PF + "(5)" } },
             { KeyMap<KeyboardMap>.Key(Keys.F6, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.PF + "(6)" } },
             { KeyMap<KeyboardMap>.Key(Keys.F7, KeyboardModifier.None), new KeyboardMap { Actions = B3270.Action.PF + "(7)" } },
@@ -99,6 +109,7 @@ namespace Wx3270
             { KeyMap<KeyboardMap>.Key(Keys.R, KeyboardModifier.Alt | KeyboardModifier.Mode3270), new KeyboardMap { Actions = B3270.Action.Reset + "()", Exact = true } },
             { KeyMap<KeyboardMap>.Key(Keys.U, KeyboardModifier.Ctrl | KeyboardModifier.Mode3270), new KeyboardMap { Actions = B3270.Action.DeleteField + "()", Exact = true } },
             { KeyMap<KeyboardMap>.Key(Keys.V, KeyboardModifier.Ctrl), new KeyboardMap { Actions = Constants.Action.Paste + "()", Exact = true } },
+            { KeyMap<KeyboardMap>.Key(Keys.V, KeyboardModifier.Alt), new KeyboardMap { Actions = Constants.Action.Paste + "(" + B3270.PasteStringOption.NoMargin + ")", Exact = true } },
             { KeyMap<KeyboardMap>.Key(Keys.V, KeyboardModifier.Ctrl | KeyboardModifier.Shift | KeyboardModifier.ModeNvt), new KeyboardMap { Actions = B3270.Action.Key + "(U+0016)", Exact = true } },
             { KeyMap<KeyboardMap>.Key(Keys.X, KeyboardModifier.Ctrl), new KeyboardMap { Actions = Constants.Action.Cut + "()", Exact = true } },
             { KeyMap<KeyboardMap>.Key(Keys.X, KeyboardModifier.Ctrl | KeyboardModifier.Shift | KeyboardModifier.ModeNvt), new KeyboardMap { Actions = B3270.Action.Key + "(U+0018)", Exact = true } },

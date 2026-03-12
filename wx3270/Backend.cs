@@ -28,7 +28,7 @@ namespace Wx3270
         /// <summary>
         /// Minimum compatible version.
         /// </summary>
-        private const string MinVersion = "4.0";
+        private const string MinVersion = "4.4.3";
 
         /// <summary>
         /// Localization group for message box titles.
@@ -168,6 +168,9 @@ namespace Wx3270
         /// </summary>
         public static bool DebugFlag { get; set; }
 
+        /// <inheritdoc/>
+        public bool Ready { get; private set; }
+
         /// <summary>
         /// Static localization.
         /// </summary>
@@ -239,7 +242,10 @@ namespace Wx3270
                     writer.WriteLine(B3270.ResourceFormat.Value(B3270.ResourceName.Oversize, this.startupConfig.OversizeParameter));
                 }
 
-                writer.WriteLine(B3270.ResourceFormat.Value(B3270.ResourceName.TraceDir, Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory).Replace(@"\", @"\\")));
+                var traceDir = this.startupConfig.Portable ?
+                    Application.StartupPath :
+                    Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+                writer.WriteLine(B3270.ResourceFormat.Value(B3270.ResourceName.TraceDir, traceDir.Replace(@"\", @"\\")));
                 if (this.startupConfig.Trace)
                 {
                     writer.WriteLine(B3270.ResourceFormat.Value(B3270.ResourceName.Trace, B3270.Value.True));
@@ -272,10 +278,12 @@ namespace Wx3270
             this.b3270.Exited += this.Exited;
             this.b3270.EnableRaisingEvents = true;
             this.b3270.StartInfo.Arguments = string.Format(
-                "{0} {1} {2} \"{3}\"",
+                "{0} {1} {2} {3} {4} \"{5}\"",
                 B3270.CommandLineOption.Utf8,
                 B3270.CommandLineOption.MinVersion,
                 MinVersion,
+                B3270.CommandLineOption.Alias,
+                "wx3270",
                 this.startupProfilePath);
 
             // Create a thread to read b3270's standard error, but don't start it right away.
@@ -305,6 +313,7 @@ namespace Wx3270
                 Wx3270.Trace.Line(Wx3270.Trace.Type.BackEnd, "Back-end initialization complete");
                 File.Delete(this.startupProfilePath);
                 this.startupProfilePath = null;
+                this.Ready = true;
                 this.OnReady();
             });
             this.RegisterStart(B3270.Indication.RunResult, this.StartRunResult);
@@ -335,9 +344,11 @@ namespace Wx3270
             this.writer.Flush();
 
             // Set up an XmlReader to listen to b3270.
-            var readerSettings = new XmlReaderSettings();
-            readerSettings.IgnoreWhitespace = true;
-            readerSettings.Async = true;
+            var readerSettings = new XmlReaderSettings
+            {
+                IgnoreWhitespace = true,
+                Async = true,
+            };
             this.xmlReader = XmlReader.Create(this.b3270.StandardOutput, readerSettings);
             this.xmlReaderTask = this.ReadEmulatorStream(this.xmlReader);
 
@@ -355,7 +366,7 @@ namespace Wx3270
             this.traceEnabled = false;
 
             // Push a Quit through the emulator.
-            this.RunAction(new BackEndAction(B3270.Action.Quit, "-force"), ErrorBox.Ignore());
+            this.RunAction(new BackEndAction(B3270.Action.Quit, B3270.QuitOption.Force), ErrorBox.Ignore());
         }
 
         /// <inheritdoc />
@@ -717,17 +728,28 @@ namespace Wx3270
         /// <param name="attributes">Element attributes.</param>
         private void StartRunResult(string name, AttributeDict attributes)
         {
+            // Get the success/failure state.
+            var success = false;
+            if (attributes.TryGetValue(B3270.Attribute.Success, out string successString) && successString.Equals(B3270.Value.True))
+            {
+                success = true;
+            }
+
             // Get the result text.
             if (!attributes.TryGetValue(B3270.Attribute.Text, out string text))
             {
                 text = string.Empty;
             }
 
-            // Get the success/failure state.
-            bool success = false;
-            if (attributes.TryGetValue(B3270.Attribute.Success, out string successString) && successString.Equals(B3270.Value.True))
+            // Prune 'text' according to 'text-err'.
+            if (!success && attributes.TryGetValue(B3270.Attribute.TextErr, out string textErrString))
             {
-                success = true;
+                var textErrQueue = new Queue<string>(textErrString.Split(new char[] { ',' }));
+                var textList = text.Split(new char[] { '\n' });
+                if (textErrQueue.Count == textList.Count())
+                {
+                    text = string.Join("\n", textList.Where(t => textErrQueue.Dequeue().Equals(B3270.Value.True, StringComparison.OrdinalIgnoreCase)));
+                }
             }
 
             // Get the tag.

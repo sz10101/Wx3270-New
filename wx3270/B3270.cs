@@ -567,6 +567,11 @@ namespace Wx3270
             public const string Text = "text";
 
             /// <summary>
+            /// Boolean array of stderr indicators for text.
+            /// </summary>
+            public const string TextErr = "text-err";
+
+            /// <summary>
             /// Type of indication.
             /// </summary>
             public const string Type = "type";
@@ -622,6 +627,16 @@ namespace Wx3270
             /// The user interface.
             /// </summary>
             public const string Ui = "ui";
+
+            /// <summary>
+            /// A keymap entry.
+            /// </summary>
+            public const string Keymap = "keymap";
+
+            /// <summary>
+            /// A keypad entry.
+            /// </summary>
+            public const string Keypad = "keypad";
         }
 
         /// <summary>
@@ -638,6 +653,11 @@ namespace Wx3270
             /// File transfer cancel.
             /// </summary>
             public const string Cancel = "Cancel";
+
+            /// <summary>
+            /// Defer option for Set().
+            /// </summary>
+            public const string Defer = "-defer";
 
             /// <summary>
             /// Dialog option for the print text action.
@@ -981,6 +1001,11 @@ namespace Wx3270
             public const string InsertMode = "insertMode";
 
             /// <summary>
+            /// NVT line mode.
+            /// </summary>
+            public const string LineMode = "lineMode";
+
+            /// <summary>
             /// The model setting.
             /// </summary>
             public const string Model = "model";
@@ -1124,6 +1149,11 @@ namespace Wx3270
             /// The visible control characters setting.
             /// </summary>
             public const string VisibleControl = "visibleControl";
+
+            /// <summary>
+            /// The Window ID setting.
+            /// </summary>
+            public const string WindowId = "windowId";
         }
 
         /// <summary>
@@ -1237,6 +1267,11 @@ namespace Wx3270
             /// Dup action.
             /// </summary>
             public const string Dup = "Dup";
+
+            /// <summary>
+            /// Echo action.
+            /// </summary>
+            public const string Echo = "Echo";
 
             /// <summary>
             /// Enter action.
@@ -1467,6 +1502,11 @@ namespace Wx3270
         public class CommandLineOption
         {
             /// <summary>
+            /// Alias option.
+            /// </summary>
+            public const string Alias = "-alias";
+
+            /// <summary>
             /// Minimum version option.
             /// </summary>
             public const string MinVersion = "-minversion";
@@ -1557,6 +1597,44 @@ namespace Wx3270
             /// Share the console between wx3270 and the child process.
             /// </summary>
             public const string ShareConsole = "-shareconsole";
+        }
+
+        /// <summary>
+        /// Options for the PasteString action.
+        /// </summary>
+        public class PasteStringOption
+        {
+            /// <summary>
+            /// Disable margin wrapping.
+            /// </summary>
+            public const string NoMargin = "-nomargin";
+        }
+
+        /// <summary>
+        /// Options for the Quit action.
+        /// </summary>
+        public class QuitOption
+        {
+            /// <summary>
+            /// Quit even if connected.
+            /// </summary>
+            public const string Force = "-force";
+        }
+
+        /// <summary>
+        /// Text character names recognized by the Key() action.
+        /// </summary>
+        public class CharacterName
+        {
+            /// <summary>
+            /// Double-quote character ('"').
+            /// </summary>
+            public const string Quot = "quot";
+
+            /// <summary>
+            /// Backslash character ('\\').
+            /// </summary>
+            public const string Backslash = "backslash";
         }
     }
 }

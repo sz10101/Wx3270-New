@@ -10,7 +10,6 @@ namespace Wx3270
     using System.Drawing;
     using System.IO;
     using System.Linq;
-    using System.Runtime.CompilerServices;
     using System.Text;
     using System.Text.RegularExpressions;
     using System.Windows.Forms;
@@ -29,12 +28,57 @@ namespace Wx3270
     /// <summary>
     /// The main control class.
     /// </summary>
-    public class Wx3270App : IUpdate, IConnectionState
+    public class Wx3270App : IUpdate, IConnectionState, IBackEndDb
     {
+        /// <summary>
+        /// Command-line options.
+        /// </summary>
+        private static readonly (string option, string args, string explanation)[] CommandLineOptions = new[]
+        {
+            (Constants.Option.Allow, "operation[,operation...]", "Allow the specified restricted operations"),
+            (Constants.Option.Connection, "connection-name", "Start a particular connection"),
+            (Constants.Option.Console, string.Empty, "Attach a console at start-up (for debugging)"),
+            (Constants.Option.Culture, "culture-name", "Override the system default culture for messages"),
+            (Constants.Option.Detached, string.Empty, "Do not synchronize profile changes in read-only mode"),
+            (Constants.Option.DumpLocalization, "file-name", "Dump the en-US localization database to a file"),
+            (Constants.Option.Edit, string.Empty, "Open the profile in edit mode (do not auto-connect to a host)|Requires the " + Constants.Option.Profile + " option"),
+            (Constants.Option.EmergencyTrace, string.Empty, "Write user-interface traces to a file on the desktop (for debugging)"),
+            (Constants.Option.FullScreen, string.Empty, "Enter full-screen mode at start-up"),
+            (Constants.Option.Help1, string.Empty, "Display command-line help"),
+            (Constants.Option.Httpd, "[address:]port", "Start an HTTP server"),
+            (Constants.Option.Location, "x,y", "Specify an initial location for the window"),
+            (Constants.Option.Maximize, string.Empty, "Create the window maximized"),
+            (Constants.Option.Model, "model-number", "Override the default 3270 model number"),
+            (Constants.Option.NoButtons, string.Empty, "Do not display the menu bar"),
+            (Constants.Option.NoBorder, string.Empty, "Create the window without a border"),
+            (Constants.Option.NoProfile, string.Empty, "Operate without a profile (use system default settings)"),
+            (Constants.Option.NoScrollBar, string.Empty, "Do not display the scroll bar"),
+            (Constants.Option.NoSplash, string.Empty, "Do not display the splash screen"),
+            (Constants.Option.Oversize, "columnsxrows", "Override the default screen dimensions"),
+            (Constants.Option.Portable, string.Empty, "Run in portable mode (no registry, no profile directory)"),
+            (Constants.Option.Profile, "profile-name", "Use the specified profile instead of Base"),
+            (Constants.Option.ReadOnly, string.Empty, "Open the profile in read-only mode (do not save changed settings)"),
+            (Constants.Option.ReadWrite, string.Empty, "Open the profile in read/write mode and warn if it can't be opened"),
+            (Constants.Option.Restrict, "operation[,operation...]", "Disable the specified restricted operations"),
+            (Constants.Option.ScriptPort, "[address:]port", "Start an s3270 scripting server"),
+            (Constants.Option.ScriptPortOnce, string.Empty, "Exit wx3270 as soon as the first s3270 scripting session ends"),
+            (Constants.Option.Set, "resource[=value]", "Set wc3270-style resource value"),
+            (Constants.Option.Topmost, string.Empty, "Make wx3270 the topmost window"),
+            (Constants.Option.Trace, string.Empty, "Turn on back-end tracing and all types of user interface tracing"),
+            (Constants.Option.UiTrace, "type[,type]", "Turn on back-end tracing and the specified types of user interface tracing"),
+            (Constants.Option.V, "[file-name]", "Display a copyright message and exit|Optionally write message to file"),
+            (Constants.Option.Xrm, "\"wc3270.resource: value\"", "Set wc3270-style resource value"),
+        };
+
         /// <summary>
         /// Title group name for localization.
         /// </summary>
         private static readonly string TitleName = I18n.PopUpTitleName(nameof(Wx3270App));
+
+        /// <summary>
+        /// True if there is a console attached.
+        /// </summary>
+        private static bool consoleAttached;
 
         /// <summary>
         /// The main form (which runs the UI thread).
@@ -45,6 +89,11 @@ namespace Wx3270
         /// The screen update interface.
         /// </summary>
         private readonly IUpdate update;
+
+        /// <summary>
+        /// The -xrm options.
+        /// </summary>
+        private readonly List<string> xrmOptions = new List<string>();
 
         /// <summary>
         /// The terminal bell.
@@ -65,6 +114,26 @@ namespace Wx3270
         /// Backing field for <see cref="AplMode"/>.
         /// </summary>
         private bool aplMode;
+
+        /// <summary>
+        /// The code page database.
+        /// </summary>
+        private CodePageDb codePageDb;
+
+        /// <summary>
+        /// The models database.
+        /// </summary>
+        private ModelsDb modelsDb;
+
+        /// <summary>
+        /// The proxies database.
+        /// </summary>
+        private ProxiesDb proxiesDb;
+
+        /// <summary>
+        /// The host prefix database.
+        /// </summary>
+        private HostPrefixDb hostPrefixDb;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Wx3270App"/> class.
@@ -118,14 +187,19 @@ namespace Wx3270
         }
 
         /// <summary>
+        /// Gets the Registry wrapper.
+        /// </summary>
+        public static ISimplifiedRegistry SimplifiedRegistry { get; private set; }
+
+        /// <summary>
+        /// Gets a value indicating whether the application is in portable mode.
+        /// </summary>
+        public static bool StaticPortable { get; private set; }
+
+        /// <summary>
         /// Gets a value indicating whether we are running on Windows.
         /// </summary>
         public bool IsWindows { get; private set; }
-
-        /// <summary>
-        /// Gets a value indicating whether a console has been attached.
-        /// </summary>
-        public bool ConsoleAttached { get; private set; }
 
         /// <summary>
         /// Gets the wx3270 prompt.
@@ -158,9 +232,24 @@ namespace Wx3270
         public bool NoWatchMode { get; private set; }
 
         /// <summary>
-        /// Gets the command-line host connection.
+        /// Gets a value indicating whether to maximize the window at start-up.
         /// </summary>
-        public string HostConnection { get; private set; }
+        public bool Maximize { get; private set; }
+
+        /// <summary>
+        /// Gets a value indicating whether to go to full screen at start-up.
+        /// </summary>
+        public bool FullScreen { get; private set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether to detach from profile updates in read-only mode.
+        /// </summary>
+        public bool Detached { get; set; }
+
+        /// <summary>
+        /// Gets the command-line host connection name.
+        /// </summary>
+        public string Connection { get; private set; }
 
         /// <summary>
         /// Gets the security restrictions.
@@ -265,7 +354,7 @@ namespace Wx3270
         /// <summary>
         /// Gets the command-line host name.
         /// </summary>
-        public string CommandLineHost { get; private set; }
+        public B3270HostSpec CommandLineB3270HostSpec { get; private set; }
 
         /// <summary>
         ///  Gets the command-line port.
@@ -283,6 +372,11 @@ namespace Wx3270
         public ISettingChange SettingChange { get; private set; }
 
         /// <summary>
+        /// Gets the terminal name handler.
+        /// </summary>
+        public ITerminalName TerminalName { get; private set; }
+
+        /// <summary>
         /// Gets the JSON localization dump file.
         /// </summary>
         public string DumpLocalization { get; private set; }
@@ -292,15 +386,42 @@ namespace Wx3270
         /// </summary>
         public string ChordName { get; set; }
 
-        /// <summary>
-        /// Gets the code page database.
-        /// </summary>
-        public CodePageDb CodePageDb { get; private set; }
+        /// <inheritdoc/>
+        public ICodePageDb CodePageDb => this.codePageDb;
+
+        /// <inheritdoc/>
+        public IModelsDb ModelsDb => this.modelsDb;
+
+        /// <inheritdoc/>
+        public IProxiesDb ProxiesDb => this.proxiesDb;
+
+        /// <inheritdoc/>
+        public IHostPrefixDb HostPrefixDb => this.hostPrefixDb;
 
         /// <summary>
-        /// Gets the host prefixes.
+        /// Gets the known B3270 settings.
         /// </summary>
-        public IHostPrefix HostPrefix { get; private set; }
+        public HashSet<string> KnownSettings { get; private set; } = new KnownSettings().Settings;
+
+        /// <summary>
+        /// Gets the -xrm options.
+        /// </summary>
+        public IEnumerable<string> XrmOptions => this.xrmOptions;
+
+        /// <summary>
+        /// Gets the import (wc3270) profile name.
+        /// </summary>
+        public string Wc3270ImportProfileName { get; private set; }
+
+        /// <summary>
+        /// Gets the main window, for pop-up parenting purposes.
+        /// </summary>
+        public Control MainWindow => this.control;
+
+        /// <summary>
+        /// Gets a value indicating whether the app is running in Portable mode.
+        /// </summary>
+        public bool Portable { get; private set; }
 
         /// <summary>
         /// Gets or sets a value indicating whether APL mode is set.
@@ -371,6 +492,11 @@ namespace Wx3270
         public bool NoSplash { get; private set; }
 
         /// <summary>
+        /// Gets or sets the pr3287 trace options.
+        /// </summary>
+        public string Pr3287TraceOptions { get; set; }
+
+        /// <summary>
         /// Static localization.
         /// </summary>
         [I18nInit]
@@ -382,6 +508,32 @@ namespace Wx3270
             I18n.LocalizeGlobal(Message.ConsoleHeader, RawText.ConsoleHeader);
             I18n.LocalizeGlobal(Message.ConsoleCautionPrefix, RawText.ConsoleCautionPrefix);
             I18n.LocalizeGlobal(Message.ConsoleCaution, RawText.ConsoleCaution);
+        }
+
+        /// <summary>
+        /// Gets the command-line help string.
+        /// </summary>
+        /// <returns>Command-line help text.</returns>
+        public static string GetCommandLineOptions()
+        {
+            var ret = @"Usage:
+    wx3270 [options] [hostname[:port]]
+    wx3270 [options] wx3270-profile-path
+    wx3270 [options] wc3270-session-file-path
+Hostname can use full wc3270 syntax
+Options:
+";
+            const string Indent = "     ";
+            foreach (var option in CommandLineOptions)
+            {
+                ret += " "
+                    + option.option
+                    + (string.IsNullOrEmpty(option.args) ? string.Empty : " ") + option.args
+                    + Environment.NewLine
+                    + Indent + option.explanation.Replace("|", Environment.NewLine + Indent) + Environment.NewLine;
+            }
+
+            return ret;
         }
 
         /// <summary>
@@ -429,12 +581,47 @@ namespace Wx3270
             var version = typeof(Wx3270App).Assembly.GetName().Version;
             var fullPath = new[]
             {
-                "http://x3270.bgp.nu/wx3270-help",
+                "https://x3270.bgp.nu/wx3270-help",
                 version.Major + "." + version.Minor,
                 I18nBase.EffectiveCulture,
                 path,
             };
             Process.Start(string.Join("/", fullPath));
+        }
+
+        /// <summary>
+        /// Attach a Windows console to the process.
+        /// </summary>
+        public static void AttachConsole()
+        {
+            if (consoleAttached)
+            {
+                return;
+            }
+
+            consoleAttached = true;
+
+            if (!NativeMethods.AllocConsole())
+            {
+                // This message may be displayed before localization is complete.
+                ErrorBox.Show(
+                    "AllocConsole " + I18n.Get(Message.Failed, RawText.Failed),
+                    I18n.Get(Title.SystemError, RawText.SystemError));
+                return;
+            }
+
+            // Set the console output encoding to UTF-8 to match b3270.
+            Console.OutputEncoding = new UTF8Encoding();
+
+            // Display the warning message.
+            Console.WriteLine("wx3270 " + I18n.Get(Message.ConsoleHeader, RawText.ConsoleHeader));
+            Console.WriteLine();
+            var foreground = Console.ForegroundColor;
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.Write(I18n.Get(Message.ConsoleCautionPrefix, RawText.ConsoleCautionPrefix) + ":");
+            Console.ForegroundColor = foreground;
+            Console.WriteLine(" " + I18n.Get(Message.ConsoleCaution, RawText.ConsoleCaution) + ".");
+            Console.WriteLine();
         }
 
         /// <summary>
@@ -444,7 +631,7 @@ namespace Wx3270
         public void Init(string[] args)
         {
             var attachConsole = false;
-            string profile = null;
+            string profileName = null;
             var startupConfig = new StartupConfig();
             this.ListenLock[B3270.Setting.ScriptPort] = false;
             this.ListenLock[B3270.Setting.Httpd] = false;
@@ -452,6 +639,10 @@ namespace Wx3270
             var restrict = Restrictions.None;
             var allow = Restrictions.None;
             var restrictAllow = RestrictAllow.Neither;
+
+            var s = new Stopwatch();
+            s.Start();
+            Trace.Line(Trace.Type.Window, $"Wx3270App {Profile.VersionClass.FullVersion} Init start");
 
             // Parse command line arguments.
             int? lastOpt = null;
@@ -471,11 +662,18 @@ namespace Wx3270
                             this.ParseAllowRestrict(Constants.Option.Allow, args[++i], ref allow);
                             restrictAllow |= RestrictAllow.Allow;
                             break;
+                        case Constants.Option.Connection:
+                        case Constants.Option.Host:
+                            this.Connection = args[++i];
+                            break;
                         case Constants.Option.Console:
                             attachConsole = true;
                             break;
                         case Constants.Option.Culture:
                             culture = args[++i];
+                            break;
+                        case Constants.Option.Detached:
+                            this.Detached = true;
                             break;
                         case Constants.Option.DumpLocalization:
                             this.DumpLocalization = args[++i];
@@ -484,8 +682,23 @@ namespace Wx3270
                             this.EditMode = true;
                             this.ReadWriteMode = true;
                             break;
-                        case Constants.Option.Host:
-                            this.HostConnection = args[++i];
+                        case Constants.Option.EmergencyTrace:
+                        case Constants.Option.Trace:
+                            startupConfig.Trace = true;
+                            Trace.Flags = Trace.Type.All;
+                            break;
+                        case Constants.Option.FullScreen:
+                            this.FullScreen = true;
+                            break;
+                        case Constants.Option.Help1:
+                        case Constants.Option.Help2:
+                        case Constants.Option.Help3:
+                            this.Splash.Stop();
+                            ErrorBox.Show(
+                                GetCommandLineOptions(),
+                                "wx3270 " + Profile.VersionClass.FullVersion,
+                                MessageBoxIcon.Information);
+                            Environment.Exit(0);
                             break;
                         case Constants.Option.Httpd:
                             startupConfig.Httpd = args[++i];
@@ -509,6 +722,12 @@ namespace Wx3270
                             }
 
                             break;
+                        case Constants.Option.Maximize:
+                            this.Maximize = true;
+                            break;
+                        case Constants.Option.Model:
+                            this.xrmOptions.Add(B3270.ResourceFormat.Value(B3270.Setting.Model, args[++i]));
+                            break;
                         case Constants.Option.NoBorder:
                             this.NoBorder = true;
                             break;
@@ -527,8 +746,16 @@ namespace Wx3270
                         case Constants.Option.NoWatch:
                             this.NoWatchMode = true;
                             break;
+                        case Constants.Option.Oversize:
+                            this.xrmOptions.Add(B3270.ResourceFormat.Value(B3270.Setting.Oversize, args[++i]));
+                            break;
+                        case Constants.Option.Portable:
+                            this.Portable = true;
+                            StaticPortable = true;
+                            startupConfig.Portable = true;
+                            break;
                         case Constants.Option.Profile:
-                            profile = args[++i];
+                            profileName = args[++i];
                             break;
                         case Constants.Option.ReadOnly:
                         case Constants.Option.Ro:
@@ -544,6 +771,23 @@ namespace Wx3270
                         case Constants.Option.ScriptPortOnce:
                             startupConfig.ScriptPortOnce = true;
                             break;
+                        case Constants.Option.Set:
+                            var setting = args[++i];
+                            var equals = setting.IndexOf('=');
+                            if (equals > 0)
+                            {
+                                this.xrmOptions.Add(B3270.ResourceFormat.Value(setting.Substring(0, equals), setting.Substring(equals + 1)));
+                            }
+                            else if (equals < 0)
+                            {
+                                this.xrmOptions.Add(B3270.ResourceFormat.Value(setting, "true"));
+                            }
+                            else
+                            {
+                                this.Usage($"Invalid {Constants.Option.Set} syntax: {setting}");
+                            }
+
+                            break;
                         case Constants.Option.Restrict:
                             this.ParseAllowRestrict(Constants.Option.Restrict, args[++i], ref restrict);
                             restrictAllow |= RestrictAllow.Restrict;
@@ -551,14 +795,12 @@ namespace Wx3270
                         case Constants.Option.Topmost:
                             this.Topmost = true;
                             break;
-                        case Constants.Option.Trace:
-                            startupConfig.Trace = true;
-                            Trace.Flags = Trace.Type.All;
-                            break;
                         case Constants.Option.UiTrace:
                             if (!Enum.TryParse(args[++i], true, out Trace.Type traceFlags))
                             {
-                                this.Usage($"Unknown trace type '{args[i]}'");
+                                this.Usage(
+                                    $"Unknown trace type '{args[i]}'" + Environment.NewLine +
+                                    "Types are: " + string.Join(", ", Enum.GetValues(typeof(Trace.Type)).OfType<Trace.Type>().Select(m => m.ToString())));
                             }
 
                             Trace.Flags = traceFlags;
@@ -582,6 +824,9 @@ namespace Wx3270
                             this.Splash.Stop();
                             File.WriteAllText(args[++i], "wx3270 " + Profile.VersionClass.FullVersion, Encoding.UTF8);
                             Environment.Exit(0);
+                            break;
+                        case Constants.Option.Xrm:
+                            this.xrmOptions.Add(args[++i]);
                             break;
                         default:
                             if (args[i].StartsWith("-"))
@@ -613,25 +858,64 @@ namespace Wx3270
                     this.Usage("Extra arguments");
                 }
 
-                if (this.HostConnection != null)
+                if (positionalArgs[0].EndsWith(Wx3270.ProfileManager.Suffix, StringComparison.OrdinalIgnoreCase))
                 {
-                    this.Usage("Cannot specify " + Constants.Option.Host + " and a positional host name");
-                }
+                    // They specified a profile name as a host, like wc3270.
+                    if (positionalArgs.Count > 1)
+                    {
+                        this.Usage("Cannot specify a profile name and a positional port");
+                    }
 
-                this.CommandLineHost = positionalArgs[0];
-                this.CommandLinePort = (positionalArgs.Count > 1) ? positionalArgs[1] : null;
-                if (!HostName.TryParse(this.CommandLineHost, out _, out _, out _, out string port, out _))
-                {
-                    this.Usage("Invalid host name");
-                }
+                    if (profileName != null)
+                    {
+                        this.Usage("Cannot specify " + Constants.Option.Profile + " and a positional profile name");
+                    }
 
-                if (port != null && this.CommandLinePort != null)
+                    profileName = positionalArgs[0];
+                }
+                else if (positionalArgs[0].EndsWith(Wc3270Import.Suffix, StringComparison.OrdinalIgnoreCase))
                 {
-                    this.Usage("Port specified twice");
+                    // They specified a wc3270 profile name as a host.
+                    if (positionalArgs.Count > 1)
+                    {
+                        this.Usage("Cannot specify a profile name and a positional port");
+                    }
+
+                    if (profileName != null)
+                    {
+                        this.Usage("Cannot specify " + Constants.Option.Profile + " and an auto-import profile name");
+                    }
+
+                    if (this.Connection != null)
+                    {
+                        this.Usage("Cannot specify " + Constants.Option.Connection + " and an auto-import profile name");
+                    }
+
+                    this.Wc3270ImportProfileName = positionalArgs[0];
+                }
+                else
+                {
+                    // They specifed a b3270-style hostname and possibly a port.
+                    if (!B3270HostSpec.TryParse(positionalArgs[0], out B3270HostSpec hostSpec))
+                    {
+                        this.Usage("Invalid host name");
+                    }
+
+                    if (positionalArgs.Count > 1)
+                    {
+                        if (hostSpec.Port != null)
+                        {
+                            this.Usage("Port specified twice");
+                        }
+
+                        hostSpec.Port = positionalArgs[1];
+                    }
+
+                    this.CommandLineB3270HostSpec = hostSpec;
                 }
             }
 
-            if (this.EditMode && profile == null)
+            if (this.EditMode && profileName == null)
             {
                 this.Usage("Must specify " + Constants.Option.Profile + " with " + Constants.Option.Edit);
             }
@@ -655,23 +939,26 @@ namespace Wx3270
             }
 
             // Get additional restrictions from the Registry.
-            var key = Registry.LocalMachine.OpenSubKey(Constants.Misc.RegistryKey, false);
-            if (key != null)
+            if (!this.Portable)
             {
-                var value = (string)key.GetValue(Constants.Misc.RestrictionsValue);
-                if (value != null)
+                var key = Registry.LocalMachine.OpenSubKey(Constants.Misc.RegistryKey, writable: false);
+                if (key != null)
                 {
-                    if (Enum.TryParse(value, true, out Restrictions r))
+                    var value = (string)key.GetValue(Constants.Misc.RestrictionsValue);
+                    if (value != null)
                     {
-                        this.Restrictions |= r;
+                        if (Enum.TryParse(value, true, out Restrictions r))
+                        {
+                            this.Restrictions |= r;
+                        }
+                        else
+                        {
+                            ErrorBox.Show($"Invalid restrictions in the registry, ignoring: '{value}'", "Registry Error");
+                        }
                     }
-                    else
-                    {
-                        ErrorBox.Show($"Invalid restrictions in the registry, ignoring: '{value}'", "Registry Error");
-                    }
-                }
 
-                key.Close();
+                    key.Close();
+                }
             }
 
             if (this.Restrictions.HasFlag(Restrictions.ModifyProfiles))
@@ -679,10 +966,28 @@ namespace Wx3270
                 this.ReadOnlyMode = true;
             }
 
+            if (this.Restrictions.HasFlag(Restrictions.GetHelp) || this.Portable)
+            {
+                Tour.SuppressAutoTours = true;
+            }
+
+            // If we're doing an import but can't save, then we're in no-profile mode.
+            if (!string.IsNullOrEmpty(this.Wc3270ImportProfileName) && this.ReadOnlyMode)
+            {
+                this.NoProfileMode = true;
+            }
+
+            // No profile means read-only and no-watch.
+            if (this.NoProfileMode)
+            {
+                this.ReadOnlyMode = true;
+                this.NoWatchMode = true;
+            }
+
             // Attach a console, if they asked for one.
             if (attachConsole)
             {
-                this.AttachConsole();
+                AttachConsole();
             }
 
             // Set up PATH to include the install folder, so scripts can find things like x3270if.exe.
@@ -706,32 +1011,29 @@ namespace Wx3270
                 ErrorBox.Show(e.Message, "wx3270 Localization", MessageBoxIcon.Information);
             }
 
+            // Set up the Registry wrapper.
+            SimplifiedRegistry = SimplifiedRegistryFactory.Get(this.Portable);
+
             // Load the profile for the first time, so we can use its settings to create basic objects.
             this.ProfileManager = new ProfileManager(this);
+            OptionsCrossbar.SetupProfile(this.ProfileManager);
             if (!this.NoProfileMode)
             {
-                if (!this.ProfileManager.Load(profile, out string fullProfile, this.ReadOnlyMode, doErrorPopups: true))
+                if (!this.ProfileManager.LoadCreate(profileName, readOnly: this.ReadOnlyMode, out string fullProfilePath))
                 {
-                    // No profile.
-                    if (profile != null)
-                    {
-                        Environment.Exit(1);
-                    }
+                    Environment.Exit(1);
                 }
 
-                if (profile != null)
-                {
-                    profile = fullProfile;
-                }
+                profileName = fullProfilePath;
             }
 
             // Start the profile tree.
             this.ProfileTracker = new ProfileTracker(this, Wx3270.ProfileManager.ProfileDirectory);
             this.ProfileTracker.Watch(Wx3270.ProfileManager.ProfileDirectory);
-            if (profile != null && !this.NoWatchMode)
+            if (profileName != null && !this.NoWatchMode)
             {
                 // Watch whatever directory the command-line profile is in, too.
-                this.ProfileTracker.Watch(Path.GetDirectoryName(Path.GetFullPath(profile)));
+                this.ProfileTracker.Watch(Path.GetDirectoryName(Wx3270.ProfileManager.SafeGetFullPath(profileName)));
             }
 
             // Watch other directories listed in the registry.
@@ -753,13 +1055,18 @@ namespace Wx3270
             this.BackEnd.Register(this.oia = new Oia(this.update));
             this.BackEnd.Register(this.TlsHello = new TlsHello());
             this.BackEnd.Register(this.Hello = new Hello());
-            this.BackEnd.Register(this.Popup = new Popup());
+            this.BackEnd.Register(this.Popup = new Popup(this.MainWindow));
             this.BackEnd.Register(this.Stats = new Stats());
             this.BackEnd.Register(this.ConnectAttempt = new ConnectAttempt());
             this.BackEnd.Register(this.WindowTitle = new WindowTitle());
-            this.BackEnd.Register(this.CodePageDb = new CodePageDb());
-            this.BackEnd.Register(this.HostPrefix = new HostPrefix());
+            this.BackEnd.Register(this.codePageDb = new CodePageDb());
+            this.BackEnd.Register(this.modelsDb = new ModelsDb());
+            this.BackEnd.Register(this.proxiesDb = new ProxiesDb());
+            this.BackEnd.Register(this.hostPrefixDb = new HostPrefixDb());
+
+            // Register specialized/cacheing indication handlers.
             this.SettingChange = new SettingChange(this.BackEnd);
+            this.TerminalName = new TerminalName(this.BackEnd);
 
             // Register UI actions.
             this.BackEnd.RegisterPassthru(Constants.Action.QuitIfNotConnected, this.QuitIfNotConnected);
@@ -781,6 +1088,9 @@ namespace Wx3270
             this.Cmd = new Cmd(this.BackEnd);
 
             this.bell = new Bell(this);
+
+            s.Stop();
+            Trace.Line(Trace.Type.Window, $"Wx3270App Init done in {s.ElapsedMilliseconds} ms");
         }
 
         /// <summary>
@@ -801,41 +1111,6 @@ namespace Wx3270
         public object Invoke(Delegate d)
         {
             return this.control.Invoke(d);
-        }
-
-        /// <summary>
-        /// Attach a Windows console to the process.
-        /// </summary>
-        public void AttachConsole()
-        {
-            if (this.ConsoleAttached)
-            {
-                return;
-            }
-
-            this.ConsoleAttached = true;
-
-            if (!NativeMethods.AllocConsole())
-            {
-                // This message may be displayed before localization is complete.
-                ErrorBox.Show(
-                    "AllocConsole " + I18n.Get(Message.Failed, RawText.Failed),
-                    I18n.Get(Title.SystemError, RawText.SystemError));
-                return;
-            }
-
-            // Set the console output encoding to UTF-8 to match b3270.
-            Console.OutputEncoding = new UTF8Encoding();
-
-            // Display the warning message.
-            Console.WriteLine("wx3270 " + I18n.Get(Message.ConsoleHeader, RawText.ConsoleHeader));
-            Console.WriteLine();
-            var foreground = Console.ForegroundColor;
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.Write(I18n.Get(Message.ConsoleCautionPrefix, RawText.ConsoleCautionPrefix) + ":");
-            Console.ForegroundColor = foreground;
-            Console.WriteLine(" " + I18n.Get(Message.ConsoleCaution, RawText.ConsoleCaution) + ".");
-            Console.WriteLine();
         }
 
         /// <summary>
@@ -914,7 +1189,7 @@ namespace Wx3270
         {
             this.Splash.Stop();
             ErrorBox.Show(
-                "Invalid command line option(s):" + Environment.NewLine + reason,
+                "Invalid command line option(s):" + Environment.NewLine + reason + Environment.NewLine + Environment.NewLine + "Use the -help option to get command-line help",
                 "wx3270 Command Line Error");
             Environment.Exit(1);
         }

@@ -68,9 +68,9 @@ namespace Wx3270.Contracts
     /// <summary>
     /// Old version delegate.
     /// </summary>
+    /// <param name="profile">Profile to modify.</param>
     /// <param name="oldVersion">Old version.</param>
-    /// <param name="saved">Set to true if the profile was modified and saved.</param>
-    public delegate void OldVersionHandler(Profile.VersionClass oldVersion, ref bool saved);
+    public delegate void OldVersionHandler(Profile profile, Profile.VersionClass oldVersion);
 
     /// <summary>
     /// Profile manager.
@@ -78,19 +78,9 @@ namespace Wx3270.Contracts
     public interface IProfileManager
     {
         /// <summary>
-        /// The change event.
-        /// </summary>
-        event ChangeHandler Change;
-
-        /// <summary>
-        /// The change-to event.
-        /// </summary>
-        event ChangeToHandler ChangeTo;
-
-        /// <summary>
         /// The final change event. Called after <see cref="Change"/>.
         /// </summary>
-        event Action<Profile, bool> ChangeFinal;
+        event Action<Profile, Profile, bool, bool> ChangeFinal;
 
         /// <summary>
         /// The list change event.
@@ -143,6 +133,11 @@ namespace Wx3270.Contracts
         string ExternalText { get; }
 
         /// <summary>
+        /// Gets or sets the main window handle.
+        /// </summary>
+        IntPtr MainWindowHandle { get; set; }
+
+        /// <summary>
         /// Sets up the profile list.
         /// </summary>
         /// <param name="profileTracker">Profile tracker.</param>
@@ -169,8 +164,18 @@ namespace Wx3270.Contracts
         /// <param name="outProfilePath">Returned full profile path.</param>
         /// <param name="readOnly">If true, open read-only.</param>
         /// <param name="doErrorPopups">If true, do pop-ups for errors.</param>
+        /// <param name="propagate">If true, propagate the settings.</param>
         /// <returns>True if load was successful.</returns>
-        bool Load(string profilePath, out string outProfilePath, bool readOnly = false, bool doErrorPopups = true);
+        bool Load(string profilePath, out string outProfilePath, bool readOnly = false, bool doErrorPopups = true, bool propagate = true);
+
+        /// <summary>
+        /// Load a profile, creating it if necessary.
+        /// </summary>
+        /// <param name="profile">Profile name.</param>
+        /// <param name="readOnly"><see cref="true"/> to open the profile read-only (and not create).</param>
+        /// <param name="profilePath">Returned full profile path.</param>
+        /// <returns><see cref="true"/>if profile loaded successfully.</returns>
+        bool LoadCreate(string profile, bool readOnly, out string profilePath);
 
         /// <summary>
         /// Merge data from another profile.
@@ -222,6 +227,12 @@ namespace Wx3270.Contracts
         bool SaveDefault(out FileStream stream);
 
         /// <summary>
+        /// Gets a copy of the default profile, without any hosts.
+        /// </summary>
+        /// <returns>Default profile.</returns>
+        Profile CopyDefaultProfile();
+
+        /// <summary>
         /// Handle a profile error.
         /// </summary>
         /// <param name="message">Error message.</param>
@@ -244,6 +255,12 @@ namespace Wx3270.Contracts
         /// <param name="refocus">Optional refocus handler.</param>
         /// <returns>True if changes actually occurred.</returns>
         bool PushAndSave(ChangeAction action, string what, Profile profileToChange = null, IRefocus refocus = null);
+
+        /// <summary>
+        /// Register for ChangeTo events.
+        /// </summary>
+        /// <param name="action">Change handler.</param>
+        void AddChangeTo(ChangeToHandler action);
 
         /// <summary>
         /// Register a merge handler.
@@ -317,19 +334,5 @@ namespace Wx3270.Contracts
         /// </summary>
         /// <param name="profile">Profile to close.</param>
         void Close(Profile profile = null);
-
-        /// <summary>
-        /// Returns the localized version of "change xyz".
-        /// </summary>
-        /// <param name="text">Attribute to format (already localized).</param>
-        /// <returns>Attribute localized with "change".</returns>
-        string ChangeName(string text);
-
-        /// <summary>
-        /// Returns the localized version of "disable xyz".
-        /// </summary>
-        /// <param name="text">Attribute to format (already localized).</param>
-        /// <returns>Attribute localized with "disable".</returns>
-        string DisableName(string text);
     }
 }

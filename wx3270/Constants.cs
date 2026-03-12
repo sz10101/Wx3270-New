@@ -91,7 +91,7 @@ namespace Wx3270
         /// <summary>
         /// The copyright message.
         /// </summary>
-        public const string Copyright = @"Copyright © 2016-2023 Paul Mattes.
+        public const string Copyright = @"Copyright © 2016-2025 Paul Mattes.
 All rights reserved.
 Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
  * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
@@ -110,6 +110,11 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             public const string Allow = "-allow";
 
             /// <summary>
+            /// The connection option.
+            /// </summary>
+            public const string Connection = "-connection";
+
+            /// <summary>
             /// The console option.
             /// </summary>
             public const string Console = "-console";
@@ -118,6 +123,11 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             /// The culture option.
             /// </summary>
             public const string Culture = "-culture";
+
+            /// <summary>
+            /// Do not pick up profile updates in read-only mode.
+            /// </summary>
+            public const string Detached = "-detached";
 
             /// <summary>
             /// Dump the localization dictionary in JSON format.
@@ -130,9 +140,29 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             public const string Edit = "-edit";
 
             /// <summary>
-            /// The HTTP daemon option.
+            /// Save traces directly on the desktop.
             /// </summary>
-            public const string Httpd = "-httpd";
+            public const string EmergencyTrace = "-emergencytrace";
+
+            /// <summary>
+            /// The full-screen option.
+            /// </summary>
+            public const string FullScreen = "-fullscreen";
+
+            /// <summary>
+            /// Display command-line help, first form.
+            /// </summary>
+            public const string Help1 = "-help";
+
+            /// <summary>
+            /// Display command-line help, second form.
+            /// </summary>
+            public const string Help2 = "--help";
+
+            /// <summary>
+            /// Display command-line help, third form.
+            /// </summary>
+            public const string Help3 = "/?";
 
             /// <summary>
             /// The host option.
@@ -140,9 +170,24 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             public const string Host = "-host";
 
             /// <summary>
+            /// The HTTP daemon option.
+            /// </summary>
+            public const string Httpd = "-httpd";
+
+            /// <summary>
             /// The initial window location option.
             /// </summary>
             public const string Location = "-location";
+
+            /// <summary>
+            /// The maximize option.
+            /// </summary>
+            public const string Maximize = "-maximize";
+
+            /// <summary>
+            /// The 3270 model to emulate.
+            /// </summary>
+            public const string Model = "-model";
 
             /// <summary>
             /// The no-border option.
@@ -173,6 +218,16 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             /// The no watch option.
             /// </summary>
             public const string NoWatch = "-nowatch";
+
+            /// <summary>
+            /// The oversize option.
+            /// </summary>
+            public const string Oversize = "-oversize";
+
+            /// <summary>
+            /// The portable option.
+            /// </summary>
+            public const string Portable = "-portable";
 
             /// <summary>
             /// The profile option.
@@ -211,6 +266,11 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             public const string ScriptPortOnce = "-scriptportonce";
 
             /// <summary>
+            /// Set option (set wc3270-style resource).
+            /// </summary>
+            public const string Set = "-set";
+
+            /// <summary>
             /// Make this window the topmost.
             /// </summary>
             public const string Topmost = "-topmost";
@@ -239,6 +299,11 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             /// Write a version string to a file and exit.
             /// </summary>
             public const string Vfile = "-vfile";
+
+            /// <summary>
+            /// Specify a wc3270-style settings override.
+            /// </summary>
+            public const string Xrm = "-xrm";
         }
 
         /// <summary>
@@ -323,6 +388,37 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
         }
 
         /// <summary>
+        /// Keys for stoppable messages.
+        /// </summary>
+        public class StopKey
+        {
+            /// <summary>
+            /// Model changes have been deferred.
+            /// </summary>
+            public const string Deferred = "Deferred";
+
+            /// <summary>
+            /// How to get back out of full screen mode.
+            /// </summary>
+            public const string FullScreen = "FullScreen";
+
+            /// <summary>
+            /// How to restore the menu bar.
+            /// </summary>
+            public const string MenuBar = "MenuBar";
+
+            /// <summary>
+            /// Profile opened read-only.
+            /// </summary>
+            public const string ReadOnly = "ReadOnly";
+
+            /// <summary>
+            /// How to restart a tour.
+            /// </summary>
+            public const string Tour = "Tour";
+        }
+
+        /// <summary>
         /// Miscellaneous constants.
         /// </summary>
         public class Misc
@@ -343,6 +439,11 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             public const string WatchKey = RegistryKey + @"\Watch";
 
             /// <summary>
+            /// Registry key for completed tours.
+            /// </summary>
+            public const string TourCompleteKey = RegistryKey + @"\TourComplete";
+
+            /// <summary>
             /// Registry value for watched directories.
             /// </summary>
             public const string WatchValue = "dir";
@@ -361,6 +462,11 @@ THIS SOFTWARE IS PROVIDED BY PAUL MATTES ""AS IS"" AND ANY EXPRESS OR IMPLIED WA
             /// Keyword for making the font smaller.
             /// </summary>
             public const string Smaller = "smaller";
+
+            /// <summary>
+            /// The Windows null device.
+            /// </summary>
+            public const string NullDevice = "NUL:";
         }
     }
 }

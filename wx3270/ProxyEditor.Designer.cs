@@ -46,6 +46,9 @@
             this.proxyTypeLabel = new System.Windows.Forms.Label();
             this.flowLayoutPanel1 = new System.Windows.Forms.FlowLayoutPanel();
             this.helpPictureBox = new System.Windows.Forms.PictureBox();
+            this.helpContextMenuStrip = new System.Windows.Forms.ContextMenuStrip(this.components);
+            this.displayHelpInBrowserToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.startTourToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.okButton = new System.Windows.Forms.Button();
             this.cancelButton = new System.Windows.Forms.Button();
             this.toolTip1 = new System.Windows.Forms.ToolTip(this.components);
@@ -53,6 +56,7 @@
             this.tableLayoutPanel1.SuspendLayout();
             this.flowLayoutPanel1.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)(this.helpPictureBox)).BeginInit();
+            this.helpContextMenuStrip.SuspendLayout();
             this.SuspendLayout();
             // 
             // proxyTableLayoutPanel
@@ -113,9 +117,9 @@
             this.portRequiredLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.portRequiredLabel.AutoSize = true;
             this.portRequiredLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 6.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.portRequiredLabel.Location = new System.Drawing.Point(258, 109);
+            this.portRequiredLabel.Location = new System.Drawing.Point(243, 109);
             this.portRequiredLabel.Name = "portRequiredLabel";
-            this.portRequiredLabel.Size = new System.Drawing.Size(38, 12);
+            this.portRequiredLabel.Size = new System.Drawing.Size(53, 15);
             this.portRequiredLabel.TabIndex = 122;
             this.portRequiredLabel.Text = "required";
             this.portRequiredLabel.TextAlign = System.Drawing.ContentAlignment.TopRight;
@@ -125,9 +129,9 @@
             this.addressRequiredLabel.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
             this.addressRequiredLabel.AutoSize = true;
             this.addressRequiredLabel.Font = new System.Drawing.Font("Microsoft Sans Serif", 6.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.addressRequiredLabel.Location = new System.Drawing.Point(258, 68);
+            this.addressRequiredLabel.Location = new System.Drawing.Point(243, 68);
             this.addressRequiredLabel.Name = "addressRequiredLabel";
-            this.addressRequiredLabel.Size = new System.Drawing.Size(38, 12);
+            this.addressRequiredLabel.Size = new System.Drawing.Size(53, 15);
             this.addressRequiredLabel.TabIndex = 122;
             this.addressRequiredLabel.Text = "required";
             this.addressRequiredLabel.TextAlign = System.Drawing.ContentAlignment.TopRight;
@@ -165,9 +169,9 @@
             // 
             this.portLabel.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.portLabel.AutoSize = true;
-            this.portLabel.Location = new System.Drawing.Point(3, 89);
+            this.portLabel.Location = new System.Drawing.Point(3, 88);
             this.portLabel.Name = "portLabel";
-            this.portLabel.Size = new System.Drawing.Size(26, 13);
+            this.portLabel.Size = new System.Drawing.Size(29, 15);
             this.portLabel.TabIndex = 1;
             this.portLabel.Text = "Port";
             // 
@@ -175,9 +179,9 @@
             // 
             this.addressLabel.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.addressLabel.AutoSize = true;
-            this.addressLabel.Location = new System.Drawing.Point(3, 48);
+            this.addressLabel.Location = new System.Drawing.Point(3, 47);
             this.addressLabel.Name = "addressLabel";
-            this.addressLabel.Size = new System.Drawing.Size(45, 13);
+            this.addressLabel.Size = new System.Drawing.Size(51, 15);
             this.addressLabel.TabIndex = 0;
             this.addressLabel.Text = "Address";
             // 
@@ -203,9 +207,9 @@
             // 
             this.usernameLabel.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.usernameLabel.AutoSize = true;
-            this.usernameLabel.Location = new System.Drawing.Point(3, 130);
+            this.usernameLabel.Location = new System.Drawing.Point(3, 129);
             this.usernameLabel.Name = "usernameLabel";
-            this.usernameLabel.Size = new System.Drawing.Size(55, 13);
+            this.usernameLabel.Size = new System.Drawing.Size(65, 15);
             this.usernameLabel.TabIndex = 3;
             this.usernameLabel.Text = "Username";
             // 
@@ -213,9 +217,9 @@
             // 
             this.passwordLabel.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.passwordLabel.AutoSize = true;
-            this.passwordLabel.Location = new System.Drawing.Point(3, 171);
+            this.passwordLabel.Location = new System.Drawing.Point(3, 170);
             this.passwordLabel.Name = "passwordLabel";
-            this.passwordLabel.Size = new System.Drawing.Size(53, 13);
+            this.passwordLabel.Size = new System.Drawing.Size(61, 15);
             this.passwordLabel.TabIndex = 4;
             this.passwordLabel.Text = "Password";
             // 
@@ -223,9 +227,9 @@
             // 
             this.proxyTypeLabel.Anchor = System.Windows.Forms.AnchorStyles.Left;
             this.proxyTypeLabel.AutoSize = true;
-            this.proxyTypeLabel.Location = new System.Drawing.Point(3, 7);
+            this.proxyTypeLabel.Location = new System.Drawing.Point(3, 6);
             this.proxyTypeLabel.Name = "proxyTypeLabel";
-            this.proxyTypeLabel.Size = new System.Drawing.Size(56, 13);
+            this.proxyTypeLabel.Size = new System.Drawing.Size(62, 15);
             this.proxyTypeLabel.TabIndex = 5;
             this.proxyTypeLabel.Text = "Proxy type";
             // 
@@ -244,6 +248,7 @@
             // 
             // helpPictureBox
             // 
+            this.helpPictureBox.ContextMenuStrip = this.helpContextMenuStrip;
             this.helpPictureBox.Image = global::Wx3270.Properties.Resources.Question23c;
             this.helpPictureBox.Location = new System.Drawing.Point(165, 3);
             this.helpPictureBox.Name = "helpPictureBox";
@@ -253,6 +258,31 @@
             this.helpPictureBox.TabStop = false;
             this.toolTip1.SetToolTip(this.helpPictureBox, "Get help");
             this.helpPictureBox.Click += new System.EventHandler(this.HelpClick);
+            // 
+            // helpContextMenuStrip
+            // 
+            this.helpContextMenuStrip.ImageScalingSize = new System.Drawing.Size(20, 20);
+            this.helpContextMenuStrip.Items.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.displayHelpInBrowserToolStripMenuItem,
+            this.startTourToolStripMenuItem});
+            this.helpContextMenuStrip.Name = "helpContextMenuStrip";
+            this.helpContextMenuStrip.Size = new System.Drawing.Size(234, 52);
+            // 
+            // displayHelpInBrowserToolStripMenuItem
+            // 
+            this.displayHelpInBrowserToolStripMenuItem.Name = "displayHelpInBrowserToolStripMenuItem";
+            this.displayHelpInBrowserToolStripMenuItem.Size = new System.Drawing.Size(233, 24);
+            this.displayHelpInBrowserToolStripMenuItem.Tag = "Help";
+            this.displayHelpInBrowserToolStripMenuItem.Text = "Display help in browser";
+            this.displayHelpInBrowserToolStripMenuItem.Click += new System.EventHandler(this.HelpMenuClick);
+            // 
+            // startTourToolStripMenuItem
+            // 
+            this.startTourToolStripMenuItem.Name = "startTourToolStripMenuItem";
+            this.startTourToolStripMenuItem.Size = new System.Drawing.Size(233, 24);
+            this.startTourToolStripMenuItem.Tag = "Tour";
+            this.startTourToolStripMenuItem.Text = "Start tour";
+            this.startTourToolStripMenuItem.Click += new System.EventHandler(this.HelpMenuClick);
             // 
             // okButton
             // 
@@ -292,8 +322,10 @@
             this.MaximizeBox = false;
             this.MinimizeBox = false;
             this.Name = "ProxyEditor";
+            this.ShowInTaskbar = false;
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
             this.Text = "Proxy Editor";
+            this.Activated += new System.EventHandler(this.ProxyEditorActivated);
             this.Shown += new System.EventHandler(this.ProxyEditor_Shown);
             this.proxyTableLayoutPanel.ResumeLayout(false);
             this.proxyTableLayoutPanel.PerformLayout();
@@ -301,6 +333,7 @@
             this.tableLayoutPanel1.PerformLayout();
             this.flowLayoutPanel1.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)(this.helpPictureBox)).EndInit();
+            this.helpContextMenuStrip.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -326,5 +359,8 @@
         private System.Windows.Forms.Label portRequiredLabel;
         private System.Windows.Forms.Label addressRequiredLabel;
         private System.Windows.Forms.ToolTip toolTip1;
+        private System.Windows.Forms.ContextMenuStrip helpContextMenuStrip;
+        private System.Windows.Forms.ToolStripMenuItem displayHelpInBrowserToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem startTourToolStripMenuItem;
     }
 }

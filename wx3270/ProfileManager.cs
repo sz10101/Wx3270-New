@@ -8,6 +8,7 @@ namespace Wx3270
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
+    using System.Reflection;
     using System.Text;
     using System.Threading;
     using System.Windows.Forms;
@@ -83,9 +84,9 @@ namespace Wx3270
         private readonly Stack<ConfigAction> redoStack = new Stack<ConfigAction>();
 
         /// <summary>
-        /// Suppressed errors.
+        /// Suppressed errors and infos.
         /// </summary>
-        private readonly List<string> errors = new List<string>();
+        private readonly List<(string message, bool isError)> errorsAndInfos = new List<(string, bool)>();
 
         /// <summary>
         /// The set of Undo controls.
@@ -123,6 +124,19 @@ namespace Wx3270
         private FileStream currentFileStream;
 
         /// <summary>
+        /// List of change-to handlers.
+        /// </summary>
+        /// <remarks>
+        /// This can't be a simple event because the callbacks are filtered.
+        /// </remarks>
+        private List<ChangeToHandler> changeToHandlers = new List<ChangeToHandler>();
+
+        /// <summary>
+        /// True if static merge handlers have been registered.
+        /// </summary>
+        private bool staticMergeDone = false;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ProfileManager"/> class.
         /// </summary>
         /// <param name="app">Application context.</param>
@@ -131,19 +145,27 @@ namespace Wx3270
             this.App = app;
 
             // Get the default profile path from the registry.
-            var key = Registry.CurrentUser.CreateSubKey(Constants.Misc.RegistryKey);
+            var key = Wx3270App.SimplifiedRegistry.CurrentUserCreateSubKey(Constants.Misc.RegistryKey);
             var defaultProfilePath = (string)key.GetValue(DefaultProfileRegistryValue);
             if (defaultProfilePath == null)
             {
                 // Use the default, and save it, in case they pick a different language later.
-                defaultProfilePath = SeedProfilePath;
+                if (app.Portable)
+                {
+                    defaultProfilePath = SafeGetFullPath(Path.Combine(Application.StartupPath, I18n.Get(StringKey.Base) + Suffix));
+                }
+                else
+                {
+                    defaultProfilePath = SafeGetFullPath(SeedProfilePath);
+                }
+
                 key.SetValue(DefaultProfileRegistryValue, defaultProfilePath);
             }
 
             key.Close();
 
             // Set the static values everything else depends on.
-            DefaultProfilePath = defaultProfilePath;
+            DefaultProfilePath = SafeGetFullPath(defaultProfilePath);
             DefaultProfileName = Path.GetFileNameWithoutExtension(defaultProfilePath);
             ProfileDirectory = Path.GetDirectoryName(defaultProfilePath);
 
@@ -155,13 +177,7 @@ namespace Wx3270
         }
 
         /// <inheritdoc />
-        public event ChangeHandler Change = (profile) => { };
-
-        /// <inheritdoc />
-        public event ChangeToHandler ChangeTo = (from, to) => { };
-
-        /// <inheritdoc />
-        public event Action<Profile, bool> ChangeFinal = (profile, isNew) => { };
+        public event Action<Profile, Profile, bool, bool> ChangeFinal = (oldProfile, newProfile, isNew, isInternal) => { };
 
         /// <inheritdoc />
         public event ListChangeHandler ListChange = (names) => { };
@@ -185,7 +201,7 @@ namespace Wx3270
         public event ChangeHandler ProfileClosing = (profile) => { };
 
         /// <inheritdoc />
-        public event OldVersionHandler OldVersion = (Profile.VersionClass oldVersion, ref bool saved) => { };
+        public event OldVersionHandler OldVersion = (Profile profile, Profile.VersionClass oldVersion) => { };
 
         /// <summary>
         /// Gets the directory where profiles are kept.
@@ -224,6 +240,9 @@ namespace Wx3270
 
         /// <inheritdoc />
         public string ExternalText => I18n.Get(StringKey.External);
+
+        /// <inheritdoc />
+        public IntPtr MainWindowHandle { get; set; }
 
         /// <summary>
         /// Gets the seed full pathname of the default default profile. The actual value comes from the registry.
@@ -270,7 +289,7 @@ namespace Wx3270
             I18n.LocalizeGlobal(StringKey.ChangeDefaultProfile, "change default profile to '{0}':");
             I18n.LocalizeGlobal(StringKey.DefaultValuesName, "Default Values");
             I18n.LocalizeGlobal(StringKey.NoProfile, "No Profile");
-            I18n.LocalizeGlobal(StringKey.ReadOnly, "Read-Only");
+            I18n.LocalizeGlobal(StringKey.ReadOnly, "RO");
             I18n.LocalizeGlobal(StringKey.Disable, "disable {0}");
 
             I18n.LocalizeGlobal(Title.DefaultProfileChange, "Default Profile Change");
@@ -288,6 +307,7 @@ namespace Wx3270
             I18n.LocalizeGlobal(Message.CannotChangeProfile, "Profile cannot be changed");
             I18n.LocalizeGlobal(Message.CannotDeserializeProfile, "Cannot deserialize profile");
             I18n.LocalizeGlobal(Message.ProfileVersionMismatch, "Profile version ({0}) is newer than wx3270 version ({1})" + Environment.NewLine + "Unknown settings will be ignored");
+            I18n.LocalizeGlobal(Message.CreatedProfile, "Created profile '{0}'");
         }
 
         /// <summary>
@@ -304,15 +324,18 @@ namespace Wx3270
         /// Ensures that the profile directory exists.
         /// </summary>
         /// <param name="forWindows">If true, create Windows artifacts.</param>
+        /// <param name="portable">If true, running in portable mode.</param>
         /// <returns>True if directory now exists.</returns>
-        public static bool CreateProfileDirectory(bool forWindows)
+        public static bool CreateProfileDirectory(bool forWindows, bool portable)
         {
+            var createdDirectory = false;
             if (!Directory.Exists(ProfileDirectory))
             {
                 try
                 {
                     // Create the directory.
                     Directory.CreateDirectory(ProfileDirectory);
+                    createdDirectory = true;
                 }
                 catch (Exception e)
                 {
@@ -326,41 +349,45 @@ namespace Wx3270
                 return true;
             }
 
-            // Set the read-only attribute on the profile directory, so file explorer looks for Desktop.ini.
-            // Note that this doesn't actually make the directory read-only.
-            // Also get rid of the System attribute, which might have been set by an earlier version of this code.
-            try
+            if (createdDirectory && !portable)
             {
-                File.SetAttributes(ProfileDirectory, (File.GetAttributes(ProfileDirectory) & ~FileAttributes.System) | FileAttributes.ReadOnly);
-            }
-            catch (Exception e)
-            {
-                ErrorBox.Show(e.Message, I18n.Get(Title.ProfileDesktopIniError));
-                return true;
-            }
-
-            var iniPath = Path.Combine(ProfileDirectory, "Desktop.ini");
-            if (!File.Exists(iniPath))
-            {
+                // Set the read-only attribute on the profile directory, so file explorer looks for Desktop.ini.
+                // Note that this doesn't actually make the directory read-only.
+                // Also get rid of the System attribute, which might have been set by an earlier version of this code.
                 try
                 {
-                    // Create Desktop.ini.
-                    using (var outStream = File.Create(iniPath))
-                    {
-                        using var writer = new StreamWriter(outStream, new UnicodeEncoding());
-                        writer.WriteLine("[.ShellClassInfo]");
-                        writer.WriteLine("ConfirmFileOp=0");
-                        writer.WriteLine("IconFile=" + Application.ExecutablePath);
-                        writer.WriteLine("IconIndex=0");
-                        writer.WriteLine("InfoTip=wx3270 Profiles");
-                    }
-
-                    File.SetAttributes(iniPath, File.GetAttributes(iniPath) | FileAttributes.System | FileAttributes.Hidden);
+                    File.SetAttributes(ProfileDirectory, (File.GetAttributes(ProfileDirectory) & ~FileAttributes.System) | FileAttributes.ReadOnly);
                 }
                 catch (Exception e)
                 {
                     ErrorBox.Show(e.Message, I18n.Get(Title.ProfileDesktopIniError));
                     return true;
+                }
+
+                // Give the directory an icon.
+                var iniPath = Path.Combine(ProfileDirectory, "Desktop.ini");
+                if (!File.Exists(iniPath))
+                {
+                    try
+                    {
+                        // Create Desktop.ini.
+                        using (var outStream = File.Create(iniPath))
+                        {
+                            using var writer = new StreamWriter(outStream, new UnicodeEncoding());
+                            writer.WriteLine("[.ShellClassInfo]");
+                            writer.WriteLine("ConfirmFileOp=0");
+                            writer.WriteLine("IconFile=" + Application.ExecutablePath);
+                            writer.WriteLine("IconIndex=0");
+                            writer.WriteLine("InfoTip=wx3270 Profiles");
+                        }
+
+                        File.SetAttributes(iniPath, File.GetAttributes(iniPath) | FileAttributes.System | FileAttributes.Hidden);
+                    }
+                    catch (Exception e)
+                    {
+                        ErrorBox.Show(e.Message, I18n.Get(Title.ProfileDesktopIniError));
+                        return true;
+                    }
                 }
             }
 
@@ -390,18 +417,121 @@ namespace Wx3270
             return profile;
         }
 
+        /// <summary>
+        /// Returns the localized name for 'changed xxx'.
+        /// </summary>
+        /// <param name="text">Name of the thing that changed.</param>
+        /// <returns>Localized string.</returns>
+        public static string ChangeName(string text)
+        {
+            return string.Format(I18n.Get(StringKey.Change), text);
+        }
+
+        /// <summary>
+        /// Returns the localized name for 'disabled xxx'.
+        /// </summary>
+        /// <param name="text">Name of the thing being disabled.</param>
+        /// <returns>Localized string.</returns>
+        public static string DisableName(string text)
+        {
+            return string.Format(I18n.Get(StringKey.Disable), text);
+        }
+
+        /// <summary>
+        /// Gets the normalized full path for a pathname, tolerating invalid paths.
+        /// </summary>
+        /// <param name="pathName">Path name.</param>
+        /// <returns>Normalized full path.</returns>
+        public static string SafeGetFullPath(string pathName)
+        {
+            string ret = pathName;
+            try
+            {
+                ret = Path.GetFullPath(pathName);
+            }
+            catch (Exception)
+            {
+                // GetFullPath didn't like it. Return the input as is.
+            }
+
+            return ret;
+        }
+
+        /// <summary>
+        /// Gets the directory name for a pathname, tolerating invalid paths.
+        /// </summary>
+        /// <param name="pathName">Path name.</param>
+        /// <returns>Normalized full path.</returns>
+        public static string SafeGetDirectoryName(string pathName)
+        {
+            string ret = pathName;
+            try
+            {
+                ret = Path.GetDirectoryName(pathName);
+            }
+            catch (Exception)
+            {
+                // GetDirectoryName didn't like it. Return the input as is.
+            }
+
+            return ret;
+        }
+
+        /// <summary>
+        /// Normalizes a profile path.
+        /// </summary>
+        /// <param name="profilePath">Profile path.</param>
+        /// <param name="error">Error message, or null.</param>
+        /// <returns>Normalized path, null if invalid.</returns>
+        public static string NormalizedPath(string profilePath, out string error)
+        {
+            error = null;
+
+            if (string.IsNullOrEmpty(profilePath))
+            {
+                // Default to the path of the base profile.
+                profilePath = DefaultProfilePath;
+            }
+
+            if (!profilePath.EndsWith(Suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                // Add the suffix.
+                profilePath += Suffix;
+            }
+
+            // Validate and expand.
+            try
+            {
+                if (!Path.IsPathRooted(profilePath))
+                {
+                    profilePath = Path.Combine(ProfileDirectory, profilePath);
+                }
+
+                return Path.GetFullPath(profilePath);
+            }
+            catch (Exception e)
+            {
+                error = e.Message;
+                return null;
+            }
+        }
+
         /// <inheritdoc />
         public void SetProfileList(IProfileTracker profileTracker)
         {
             this.profileTree = profileTracker.Tree;
-            profileTracker.ProfileTreeChanged += (nodes) => this.profileTree = nodes;
+            profileTracker.ProfileTreeChanged += (nodes) =>
+            {
+                this.profileTree = nodes;
+                this.ProfileTreeChanged(nodes);
+            };
         }
 
         /// <inheritdoc />
         public void CreateProfileDirectoryAndProfile()
         {
             // Create the default profile directory.
-            CreateProfileDirectory(this.App.IsWindows);
+            CreateProfileDirectory(this.App.IsWindows, this.App.Portable);
 
             // Create the base profile.
             if (!File.Exists(DefaultProfilePath))
@@ -411,15 +541,62 @@ namespace Wx3270
         }
 
         /// <inheritdoc />
-        public bool Load(string profilePath, out string outProfilePath, bool readOnly = false, bool doErrorPopups = true)
+        public bool Load(string profilePath, out string outProfilePath, bool readOnly = false, bool doErrorPopups = true, bool propagate = true)
         {
-            return this.LoadInternal(profilePath, out outProfilePath, readOnly, doErrorPopups);
+            return this.LoadInternal(profilePath, out outProfilePath, readOnly, doErrorPopups, propagate, out _);
         }
 
         /// <inheritdoc />
         public bool Load(string profilePath, bool readOnly = false, bool doErrorPopups = true)
         {
-            return this.LoadInternal(profilePath, out _, readOnly, doErrorPopups);
+            return this.LoadInternal(profilePath, out _, readOnly, doErrorPopups, true, out _);
+        }
+
+        /// <inheritdoc />
+        public bool LoadCreate(string profileName, bool readOnly, out string profilePath)
+        {
+            // Sanitize it.
+            if (profileName != null)
+            {
+                string error = null;
+                try
+                {
+                    var fullPath = Path.GetFullPath(profileName);
+                }
+                catch (Exception e)
+                {
+                    error = e.Message;
+                }
+
+                if (error != null)
+                {
+                    this.ProfileError(error);
+                    profilePath = null;
+                    return false;
+                }
+            }
+
+            // Try loading it.
+            if (this.LoadInternal(profileName, out profilePath, readOnly: readOnly, doErrorPopups: false, propagate: false, out bool notFound))
+            {
+                return true;
+            }
+
+            if (!readOnly && profileName != null && notFound)
+            {
+                // No matching profile. Try creating it.
+                if (this.Save(FullProfilePath(profileName), this.CopyDefaultProfile()))
+                {
+                    this.ProfileInfo(string.Format(I18n.Get(Message.CreatedProfile), Path.GetFileNameWithoutExtension(profileName)));
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            // This second attempt will either succeed or pop up an error message.
+            return this.LoadInternal(profileName, out profilePath, readOnly: readOnly, doErrorPopups: true, propagate: false, out _);
         }
 
         /// <inheritdoc />
@@ -446,6 +623,7 @@ namespace Wx3270
         /// <inheritdoc />
         public bool Merge(Profile destProfile, Profile mergeProfile, ImportType importType)
         {
+            this.RegisterStaticMergeMethods();
             var previous = this.Current.Clone();
             if (this.PushAndSave(
                 (current) =>
@@ -487,9 +665,12 @@ namespace Wx3270
             {
                 this.propagatingProfile = true;
                 this.NewProfileOpened(this.Current);
-                this.Change(this.Current);
-                this.ChangeTo(null, this.Current);
-                this.ChangeFinal(this.Current, true);
+                foreach (var handler in this.changeToHandlers)
+                {
+                    handler(null, this.Current);
+                }
+
+                this.ChangeFinal(null, this.Current, true, true);
             }
             finally
             {
@@ -500,15 +681,8 @@ namespace Wx3270
         /// <inheritdoc />
         public bool Save(string profilePathName = null, Profile profile = null)
         {
-            if (profilePathName == null)
-            {
-                profilePathName = this.Current.PathName;
-            }
-
-            if (profile == null)
-            {
-                profile = this.Current;
-            }
+            profilePathName ??= this.Current.PathName;
+            profile ??= this.Current;
 
             var isCurrent = this.IsCurrentPathName(profilePathName);
             if (isCurrent && profile.ReadOnly)
@@ -598,11 +772,23 @@ namespace Wx3270
         }
 
         /// <inheritdoc />
+        public Profile CopyDefaultProfile()
+        {
+            var profile = Read(DefaultProfilePath, out _, out _, out _, out _);
+            if (profile != null)
+            {
+                profile.Hosts = new List<HostEntry>();
+            }
+
+            return profile ?? Profile.DefaultProfile;
+        }
+
+        /// <inheritdoc />
         public void ProfileError(string message)
         {
             if (this.suppressErrors)
             {
-                this.errors.Add(message);
+                this.errorsAndInfos.Add((message, true));
             }
             else
             {
@@ -610,14 +796,41 @@ namespace Wx3270
             }
         }
 
+        /// <summary>
+        /// Displays a profile-related Info message.
+        /// </summary>
+        /// <param name="message">Message text.</param>
+        public void ProfileInfo(string message)
+        {
+            if (this.suppressErrors)
+            {
+                this.errorsAndInfos.Add((message, false));
+            }
+            else
+            {
+                ErrorBox.Show(message, I18n.Get(Title.ProfileOpen), MessageBoxIcon.Information);
+            }
+        }
+
         /// <inheritdoc />
         public void DumpErrors()
         {
             this.suppressErrors = false;
-            if (this.errors.Any())
+            if (this.errorsAndInfos.Any())
             {
-                ErrorBox.Show(string.Join(Environment.NewLine, this.errors), I18n.Get(Title.ProfileError));
-                this.errors.Clear();
+                foreach (var (message, isError) in this.errorsAndInfos)
+                {
+                    if (isError)
+                    {
+                        ErrorBox.Show(message, I18n.Get(Title.ProfileError));
+                    }
+                    else
+                    {
+                        ErrorBox.Show(message, I18n.Get(Title.ProfileOpen), MessageBoxIcon.Information);
+                    }
+                }
+
+                this.errorsAndInfos.Clear();
             }
         }
 
@@ -638,14 +851,14 @@ namespace Wx3270
                     // Short-circuit bad behavior.
                     if (this.propagatingProfile)
                     {
-                        Trace.Line(Trace.Type.Profile, "Error: attempt to change profile while propagating profile");
+                        Trace.Line(Trace.Type.Profile, $"Error: attempt to change profile ({what}) while propagating profile");
                         return true;
                     }
 
                     // Short-circuit other bad behavior.
                     if (!this.pushedFirst)
                     {
-                        Trace.Line(Trace.Type.Profile, "Error: attempt to push a change before first profile is pushed out");
+                        Trace.Line(Trace.Type.Profile, $"Error: attempt to push a change ({what}) before first profile is pushed out");
                         return true;
                     }
                 }
@@ -655,7 +868,10 @@ namespace Wx3270
                 this.undoStack.Push(new ProfileChangeConfigAction(this, profile, what, refocus: refocus));
                 if (isCurrent)
                 {
+                    // Propagate the change to ourselves.
+                    var previous = this.Current;
                     this.Current = trial;
+                    this.PropagateExternalChange(previous, isInternal: true);
                 }
 
                 // No more redos.
@@ -678,6 +894,17 @@ namespace Wx3270
             }
 
             return false;
+        }
+
+        /// <inheritdoc/>
+        public void AddChangeTo(ChangeToHandler handler)
+        {
+            if (this.pushedFirst)
+            {
+                handler(null, this.Current);
+            }
+
+            this.changeToHandlers.Add(handler);
         }
 
         /// <inheritdoc />
@@ -745,18 +972,17 @@ namespace Wx3270
         }
 
         /// <inheritdoc />
-        public bool IsCurrentPathName(string profilePathName)
-        {
-            return profilePathName.Equals(this.Current.PathName, StringComparison.InvariantCultureIgnoreCase);
-        }
+        public bool IsCurrentPathName(string profilePathName) =>
+            (string.IsNullOrEmpty(profilePathName) && string.IsNullOrEmpty(this.Current?.PathName)) ||
+            (!string.IsNullOrEmpty(this.Current?.PathName) && HPathUtil.ArePathsEqual(SafeGetFullPath(profilePathName), this.Current.PathName));
 
         /// <inheritdoc />
         public bool IsDefaultPathName(string profilePathName)
         {
-            var key = Registry.CurrentUser.CreateSubKey(Constants.Misc.RegistryKey);
+            var key = Wx3270App.SimplifiedRegistry.CurrentUserCreateSubKey(Constants.Misc.RegistryKey);
             var defaultProfile = (string)key.GetValue(DefaultProfileRegistryValue);
             key.Close();
-            return defaultProfile != null && defaultProfile.Equals(profilePathName, StringComparison.InvariantCultureIgnoreCase);
+            return defaultProfile != null && SafeGetFullPath(defaultProfile) == profilePathName;
         }
 
         /// <inheritdoc />
@@ -769,7 +995,7 @@ namespace Wx3270
         public void SetDefaultProfile(Profile profile)
         {
             // Remember the old value and set the new one.
-            var key = Registry.CurrentUser.CreateSubKey(Constants.Misc.RegistryKey);
+            var key = Wx3270App.SimplifiedRegistry.CurrentUserCreateSubKey(Constants.Misc.RegistryKey);
             var oldValue = (string)key.GetValue(DefaultProfileRegistryValue);
             key.SetValue(DefaultProfileRegistryValue, profile.PathName);
             key.Close();
@@ -814,18 +1040,6 @@ namespace Wx3270
                 this.currentFileStream.Close();
                 this.currentFileStream = null;
             }
-        }
-
-        /// <inheritdoc />
-        public string ChangeName(string text)
-        {
-            return string.Format(I18n.Get(StringKey.Change), text);
-        }
-
-        /// <inheritdoc />
-        public string DisableName(string text)
-        {
-            return string.Format(I18n.Get(StringKey.Disable), text);
         }
 
         /// <summary>
@@ -926,7 +1140,7 @@ namespace Wx3270
 
             if (profile == null)
             {
-                error = I18n.Get(Message.CannotDeserializeProfile);
+                error = profilePath + ":" + Environment.NewLine + I18n.Get(Message.CannotDeserializeProfile);
                 stream.Close();
                 return null;
             }
@@ -1019,39 +1233,114 @@ namespace Wx3270
         }
 
         /// <summary>
+        /// Transforms a partial profile pathname to a full profile pathname.
+        /// </summary>
+        /// <param name="partialPath">Partial pathname.</param>
+        /// <returns>Full pathname.</returns>
+        private static string FullProfilePath(string partialPath)
+        {
+            var path = partialPath;
+            if (!path.EndsWith(Suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                path += Suffix;
+            }
+
+            if (!Path.IsPathRooted(path))
+            {
+                path = Path.Combine(ProfileDirectory, path);
+            }
+
+            return Path.GetFullPath(path);
+        }
+
+        /// <summary>
+        /// The profile tree changed.
+        /// </summary>
+        /// <param name="nodes">Updated list of watch nodes.</param>
+        private void ProfileTreeChanged(List<FolderWatchNode> nodes)
+        {
+            if (!this.Current.ReadOnly || this.App.Detached)
+            {
+                return;
+            }
+
+            ProfileWatchNode newProfileNode = null;
+            foreach (var node in nodes)
+            {
+                node.ForEach(n =>
+                {
+                    if (n is ProfileWatchNode profileWatchNode && profileWatchNode.PathName.Equals(this.Current.PathName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        newProfileNode = profileWatchNode;
+                    }
+                });
+            }
+
+            if (newProfileNode == null)
+            {
+                return;
+            }
+
+            var newProfile = newProfileNode.Profile;
+            newProfile.ReadOnly = true;
+            newProfile.Size = null;
+            var previous = this.Current;
+            this.Current = newProfile;
+            this.App.Invoke(new MethodInvoker(() => this.PropagateExternalChange(previous)));
+            this.FlushUndoRedo();
+        }
+
+        /// <summary>
         /// Load a profile, i.e., make some profile current.
         /// </summary>
         /// <param name="profilePath">Full profile pathname.</param>
         /// <param name="outProfilePath">Returned full profile path.</param>
         /// <param name="readOnly">If true, open read-only.</param>
         /// <param name="doErrorPopups">If true, do pop-ups for errors.</param>
+        /// <param name="propagate">If true, propagate settings.</param>
+        /// <param name="notFound">Returned true if profile not found.</param>
         /// <returns>True if load was successful.</returns>
-        private bool LoadInternal(string profilePath, out string outProfilePath, bool readOnly, bool doErrorPopups)
+        private bool LoadInternal(string profilePath, out string outProfilePath, bool readOnly, bool doErrorPopups, bool propagate, out bool notFound)
         {
-            // Allow the profile to be under-specified.
-            if (profilePath != null)
+            notFound = false;
+
+            // Normalize the path, which could fail if it uses invalid characters.
+            var normalizedPath = NormalizedPath(profilePath, out string e);
+            if (normalizedPath == null)
             {
-                if (!profilePath.EndsWith(Suffix, StringComparison.OrdinalIgnoreCase))
+                if (doErrorPopups)
                 {
-                    profilePath += Suffix;
+                    ErrorBox.Show(profilePath + ": " + e, I18n.Get(Title.ProfileOpen));
                 }
 
-                if (!Path.IsPathRooted(profilePath))
-                {
-                    if (File.Exists(Path.Combine(SeedProfileDirectory, profilePath)))
-                    {
-                        profilePath = Path.Combine(SeedProfileDirectory, profilePath);
-                    }
-                    else
-                    {
-                        profilePath = Path.GetFullPath(profilePath);
-                    }
-                }
+                outProfilePath = profilePath;
+                return false;
             }
 
-            outProfilePath = profilePath;
+            outProfilePath = normalizedPath;
+            if (!File.Exists(normalizedPath))
+            {
+                if (doErrorPopups)
+                {
+                    // I need the localized Windows error message.
+                    var errorMessage = $"Cannot open profile '{normalizedPath}'";
+                    try
+                    {
+                        new FileStream(normalizedPath, FileMode.Open).Close();
+                    }
+                    catch (Exception ex)
+                    {
+                        errorMessage = ex.Message;
+                    }
 
-            if (profilePath != null && this.IsCurrentPathName(profilePath))
+                    ErrorBox.Show(errorMessage, I18n.Get(Title.ProfileOpen));
+                }
+
+                notFound = true;
+                return false;
+            }
+
+            if (this.IsCurrentPathName(normalizedPath))
             {
                 // Re-loading the current profile is a successful no-op.
                 return true;
@@ -1060,29 +1349,22 @@ namespace Wx3270
             // Remember the previous profile, whatever it is.
             var previous = this.Current?.Clone();
 
-            if (profilePath == null)
-            {
-                profilePath = DefaultProfilePath;
-            }
-
-            var isDefault = profilePath.Equals(DefaultProfilePath, StringComparison.InvariantCultureIgnoreCase);
-
-            var profileName = Path.GetFileNameWithoutExtension(profilePath);
+            var isDefault = HPathUtil.ArePathsEqual(normalizedPath, DefaultProfilePath);
+            var profileName = Path.GetFileNameWithoutExtension(normalizedPath);
 
             string error;
             string warning;
             FileStream stream = null;
             bool busy;
-            bool notFound;
             Profile.VersionClass oldVersion = null;
             Profile profile;
             if (readOnly)
             {
-                profile = Read(profilePath, out error, out warning, out busy, out notFound);
+                profile = Read(normalizedPath, out error, out warning, out busy, out notFound);
             }
             else
             {
-                profile = Read(profilePath, out error, out warning, locked: true, out stream, out busy, out notFound, out oldVersion);
+                profile = Read(normalizedPath, out error, out warning, locked: true, out stream, out busy, out notFound, out oldVersion);
             }
 
             if (profile != null)
@@ -1095,7 +1377,7 @@ namespace Wx3270
                 if (busy)
                 {
                     // Open read-only.
-                    profile = Read(profilePath, out error, out warning, out busy, out notFound);
+                    profile = Read(normalizedPath, out error, out warning, out busy, out notFound);
                     if (profile == null)
                     {
                         if (doErrorPopups)
@@ -1107,6 +1389,7 @@ namespace Wx3270
                     }
 
                     profile.ReadOnly = true;
+                    profile.ReadOnlyForced = true;
                     this.Current = profile;
                 }
                 else if (isDefault && notFound)
@@ -1153,21 +1436,21 @@ namespace Wx3270
             this.NewProfileOpened(this.Current);
 
             // Tell everyone else about it.
-            this.PropagateExternalChange(previous, isNew: true);
+            if (propagate)
+            {
+                this.PropagateExternalChange(previous, isNew: true);
+            }
 
             // Switch to the new one.
             this.currentFileStream = stream;
 
             // Tell interested parties that we've loaded up an old version.
-            if (oldVersion != null)
+            if (oldVersion != null && !this.Current.ReadOnly)
             {
-                var saved = false;
-                this.OldVersion(oldVersion, ref saved);
-                if (!saved)
-                {
-                    // Write the profile back out with the new version number applied.
-                    this.Save();
-                }
+                this.OldVersion(this.Current, oldVersion);
+
+                // Write the profile back out with the new version number applied.
+                this.Save();
             }
 
             return true;
@@ -1245,19 +1528,67 @@ namespace Wx3270
         /// </summary>
         /// <param name="previous">Previous profile.</param>
         /// <param name="isNew">True if the profile is new (false if re-reading).</param>
-        private void PropagateExternalChange(Profile previous, bool isNew = false)
+        /// <param name="isInternal">True if the update was internally generated.</param>
+        private void PropagateExternalChange(Profile previous, bool isNew = false, bool isInternal = false)
         {
             // Tell everyone about it.
             try
             {
                 this.propagatingProfile = true;
-                this.Change(this.Current);
-                this.ChangeTo(previous, this.Current);
-                this.ChangeFinal(this.Current, isNew);
+                foreach (var handler in this.changeToHandlers)
+                {
+                    handler(previous, this.Current);
+                }
+
+                this.ChangeFinal(previous, this.Current, isNew, isInternal);
             }
             finally
             {
                 this.propagatingProfile = false;
+            }
+        }
+
+        /// <summary>
+        /// Register static merge methods.
+        /// </summary>
+        private void RegisterStaticMergeMethods()
+        {
+            if (this.staticMergeDone)
+            {
+                return;
+            }
+
+            this.staticMergeDone = true;
+
+            // Call static initialization for merging.
+            foreach (var methodInfo in Assembly.GetCallingAssembly()
+                .GetTypes()
+                .Where(t => t.IsClass && t.Namespace == "Wx3270")
+                .SelectMany(t => t.GetMethods().Where(m => m.IsStatic)))
+            {
+                if (methodInfo.CustomAttributes.Any())
+                {
+                    // Shit -- I'm never seeing ColorCrossbar. Why?
+                }
+
+                foreach (var attributeData in methodInfo.CustomAttributes.Where(a => a.AttributeType == typeof(MergeAttribute)))
+                {
+                    var importType = ImportType.None;
+                    if (attributeData.ConstructorArguments.Count > 0)
+                    {
+                        foreach (var t in attributeData.ConstructorArguments.Where(a => a.ArgumentType == typeof(ImportType)).Select(a => a.Value))
+                        {
+                            importType |= (ImportType)t;
+                        }
+                    }
+
+                    this.RegisterMerge(
+                        importType,
+                        (toProfile, fromProfile, importType) =>
+                        {
+                            return (bool)methodInfo.Invoke(null, new object[] { toProfile, fromProfile, importType });
+                        });
+                }
             }
         }
 
@@ -1449,13 +1780,13 @@ namespace Wx3270
                 var op = (DefaultProfileConfigAction)from.Pop();
                 if (op.IsUndo)
                 {
-                    var key = Registry.CurrentUser.CreateSubKey(Constants.Misc.RegistryKey);
+                    var key = Wx3270App.SimplifiedRegistry.CurrentUserCreateSubKey(Constants.Misc.RegistryKey);
                     key.SetValue(DefaultProfileRegistryValue, op.OldPath);
                     key.Close();
                 }
                 else
                 {
-                    var key = Registry.CurrentUser.CreateSubKey(Constants.Misc.RegistryKey);
+                    var key = Wx3270App.SimplifiedRegistry.CurrentUserCreateSubKey(Constants.Misc.RegistryKey);
                     key.SetValue(DefaultProfileRegistryValue, op.NewPath);
                     key.Close();
                 }
@@ -1658,6 +1989,11 @@ namespace Wx3270
             /// Profile version mismatch.
             /// </summary>
             public static readonly string ProfileVersionMismatch = I18n.Combine(MessageName, "profileVersionMismatch");
+
+            /// <summary>
+            /// Automatically created profile.
+            /// </summary>
+            public static readonly string CreatedProfile = I18n.Combine(MessageName, "createdProfile");
         }
     }
 }

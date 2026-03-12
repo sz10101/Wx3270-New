@@ -8,6 +8,7 @@ namespace Wx3270
     using System.Collections.Generic;
     using System.ComponentModel;
     using System.Windows.Forms;
+    using I18nBase;
 
     using Wx3270.Contracts;
 
@@ -27,6 +28,8 @@ namespace Wx3270
             { B3270.Setting.CursorBlink, "cursor blink" },
             { B3270.Setting.MonoCase, "monocase" },
             { B3270.Setting.NopSeconds, "TELNET NOP option" },
+            { B3270.Setting.PreferIpv4, "prefer IPv4 addresses" },
+            { B3270.Setting.PreferIpv6, "prefer IPv6 addresses" },
             { B3270.Setting.PrinterCodePage, "printer code page" },
             { B3270.Setting.PrinterName, "printer name" },
             { B3270.Setting.PrinterOptions, "printer options" },
@@ -61,6 +64,11 @@ namespace Wx3270
         };
 
         /// <summary>
+        /// Tour dictionary.
+        /// </summary>
+        private readonly Dictionary<TabPage, IEnumerable<(Control, int?, Orientation)>> tours = new Dictionary<TabPage, IEnumerable<(Control, int?, Orientation)>>();
+
+        /// <summary>
         /// The keypad pop-up.
         /// </summary>
         private Keypad keypad;
@@ -71,9 +79,9 @@ namespace Wx3270
         private AplKeypad aplKeypad;
 
         /// <summary>
-        /// True if the dialog has ever been activated.
+        /// The set of controls being modified programmatically.
         /// </summary>
-        private bool everActivated;
+        private HashSet<Control> lockedControls = new HashSet<Control>();
 
         /// <summary>
         /// The window handle.
@@ -115,23 +123,44 @@ namespace Wx3270
         private IBackEnd BackEnd => this.app.BackEnd;
 
         /// <summary>
+        /// Returns the localized string for changing a setting.
+        /// </summary>
+        /// <param name="setting">Setting name.</param>
+        /// <returns>Localized string.</returns>
+        public static string ChangeName(string setting)
+        {
+            return Wx3270.ProfileManager.ChangeName(I18n.Get(SettingPath(setting)));
+        }
+
+        /// <summary>
+        /// Returns the global localization path for a setting.
+        /// </summary>
+        /// <param name="setting">Toggle to localize.</param>
+        /// <returns>Global path name.</returns>
+        public static string SettingPath(string setting)
+        {
+            return I18n.Combine(nameof(Settings), "setting", setting);
+        }
+
+        /// <summary>
         /// Create the sample screen image.
         /// </summary>
         /// <param name="color">True if in 3279 (color) mode.</param>
+        /// <param name="withExtras">True to include extra characters.</param>
         /// <returns>Sample image.</returns>
-        public ScreenImage CreateSampleImage(bool color)
+        public ScreenImage CreateSampleImage(bool color, bool withExtras = false)
         {
             var image = new ScreenImage
             {
-                MaxRows = 5,
-                MaxColumns = 29,
-                LogicalRows = 5,
-                LogicalColumns = 29,
+                MaxRows = withExtras ? 8 : 5,
+                MaxColumns = withExtras ? 32 : 29,
+                LogicalRows = withExtras ? 8 : 5,
+                LogicalColumns = withExtras ? 32 : 29,
                 ColorMode = color,
                 CursorEnabled = true,
                 CursorRow1 = 4,
                 CursorColumn1 = 2,
-                Image = new Cell[5, 29],
+                Image = withExtras ? new Cell[8, 32] : new Cell[5, 29],
                 Settings = new SettingsDictionary(),
             };
             for (var row = 0; row < image.MaxRows; row++)
@@ -179,6 +208,22 @@ namespace Wx3270
                 color ? HostColor.NeutralWhite : HostColor.NeutralWhite,
                 color ? GraphicRendition.None : GraphicRendition.Highlight,
                 this.LocalizeSample("Intensified Protected Field"));
+            if (withExtras)
+            {
+                PaintImage(
+                    image,
+                    6,
+                    color ? HostColor.Blue : HostColor.NeutralWhite,
+                    GraphicRendition.None,
+                    "01234567879!@#¬$€£%^&*()[]{}<>«»");
+                PaintImage(
+                    image,
+                    7,
+                    color ? HostColor.Blue : HostColor.NeutralWhite,
+                    GraphicRendition.None,
+                    "_=+-\\|;:'\",./?¿ÁáÆæÈèÏïÑñÔôØøßÚú");
+            }
+
             return image;
         }
 
@@ -200,14 +245,8 @@ namespace Wx3270
             this.keypad = keypad;
             this.aplKeypad = aplKeypad;
 
-            // Register for secondary init.
-            mainScreen.SecondaryInitEvent += this.SecondaryInit;
-
             // Register the undo/redo buttons.
             this.ProfileManager.RegisterUndoRedo(this.undoButton, this.redoButton, this.toolTip1);
-
-            // Register the safety check.
-            this.ProfileManager.SafetyCheck += this.SafetyCheck;
 
             // Process restrictions.
             if (this.app.Restricted(Restrictions.GetHelp))
@@ -220,16 +259,9 @@ namespace Wx3270
 
             // Substitute.
             VersionSpecific.Substitute(this);
-        }
 
-        /// <summary>
-        /// Returns the global localization path for a setting.
-        /// </summary>
-        /// <param name="setting">Toggle to localize.</param>
-        /// <returns>Global path name.</returns>
-        private static string SettingPath(string setting)
-        {
-            return I18n.Combine(nameof(Settings), "setting", setting);
+            // Do secondary init, now that we are called on demand.
+            this.SecondaryInit();
         }
 
         /// <summary>
@@ -249,16 +281,6 @@ namespace Wx3270
                 cell.Text = text[column];
                 cell.GraphicRendition = graphicRendition;
             }
-        }
-
-        /// <summary>
-        /// Returns the localized string for changing a setting.
-        /// </summary>
-        /// <param name="setting">Setting name.</param>
-        /// <returns>Localized string.</returns>
-        private string ChangeName(string setting)
-        {
-            return this.ProfileManager.ChangeName(I18n.Get(SettingPath(setting)));
         }
 
         /// <summary>
@@ -284,17 +306,62 @@ namespace Wx3270
                 I18n.LocalizeGlobal(SettingPath(t.Key), t.Value);
             }
 
+            // Set up the read-only message and save-as button.
+            this.ProfileManager.AddChangeTo((oldProfile, newProfile) => this.readOnlyFlowLayoutPanel.Visible = newProfile.ReadOnly);
+
             // Set up the tabs.
-            this.EmulationTabInit();
+            this.OptionsTabInit();
             this.SoundsTabInit();
             this.FontTabInit();
             this.ColorTabInit();
-            this.OptionsTabInit();
             this.KeypadTabInit(this.keypad, this.aplKeypad);
             this.KeyboardTabInit();
             this.ListenTabInit();
             this.ProxyTabInit();
             this.MiscTabInit();
+        }
+
+        /// <summary>
+        /// Safely modify a control, without any side-effects.
+        /// </summary>
+        /// <param name="control">Check box to modify.</param>
+        /// <param name="action">Action to perform.</param>
+        private void SafeControlModify(Control control, Action action)
+        {
+            try
+            {
+                this.lockedControls.Add(control);
+                action();
+            }
+            finally
+            {
+                this.lockedControls.Remove(control);
+            }
+        }
+
+        /// <summary>
+        /// Safely modify a control, without any side-effects.
+        /// </summary>
+        /// <param name="controls">Controls to modify.</param>
+        /// <param name="action">Action to perform.</param>
+        private void SafeControlModify(IEnumerable<Control> controls, Action action)
+        {
+            try
+            {
+                foreach (var control in controls)
+                {
+                    this.lockedControls.Add(control);
+                }
+
+                action();
+            }
+            finally
+            {
+                foreach (var control in controls)
+                {
+                    this.lockedControls.Remove(control);
+                }
+            }
         }
 
         /// <summary>
@@ -318,30 +385,6 @@ namespace Wx3270
         }
 
         /// <summary>
-        /// Perform a safety check for a profile change.
-        /// </summary>
-        /// <param name="oldProfile">Old profile.</param>
-        /// <param name="newProfile">New profile.</param>
-        /// <param name="safe">Returned false if it is not safe.</param>
-        private void SafetyCheck(Profile oldProfile, Profile newProfile, ref bool safe)
-        {
-            if (!this.connected || !this.ProfileManager.IsCurrentPathName(oldProfile.PathName))
-            {
-                // It only matters when connected and about to change the current profile.
-                return;
-            }
-
-            // Check the things that are negotiated at connect time and can't change later.
-            if (oldProfile.Model != newProfile.Model
-                || !oldProfile.Oversize.Equals(newProfile.Oversize)
-                || oldProfile.TerminalNameOverride != newProfile.TerminalNameOverride
-                || oldProfile.ColorMode != newProfile.ColorMode)
-            {
-                safe = false;
-            }
-        }
-
-        /// <summary>
         /// Paint a sample screen box.
         /// </summary>
         /// <param name="sender">Event sender.</param>
@@ -351,6 +394,7 @@ namespace Wx3270
         /// <param name="layoutPanel">Layout panel (background).</param>
         /// <param name="statusLine">Status line.</param>
         /// <param name="separator">Separator between screen and status line.</param>
+        /// <param name="withExtras">True to include extra text.</param>
         private void SamplePaint(
             object sender,
             PaintEventArgs e,
@@ -358,15 +402,16 @@ namespace Wx3270
             ScreenBox screenBox,
             TableLayoutPanel layoutPanel,
             Label statusLine,
-            PictureBox separator)
+            PictureBox separator,
+            bool withExtras)
         {
             // Set up the sample status line.
             layoutPanel.BackColor = color ? this.editedColors.HostColors[HostColor.NeutralBlack] : this.editedColors.MonoColors.Background;
             statusLine.ForeColor = color ? this.editedColors.HostColors[HostColor.Blue] : this.editedColors.MonoColors.Normal;
             separator.BackColor = statusLine.ForeColor;
 
-            var sampleImage = this.CreateSampleImage(color);
-            if (this.MonoCaseCheckBox.Checked)
+            var sampleImage = this.CreateSampleImage(color: color, withExtras: withExtras);
+            if (this.monoCaseCheckBox.Checked)
             {
                 sampleImage.Settings.Add(B3270.Setting.MonoCase, true);
             }
@@ -389,9 +434,9 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         /// <param name="screenSample">Sample box.</param>
         /// <param name="color">Optional color mode override.</param>
-        private void SamplePaint(object sender, PaintEventArgs e, ScreenSample screenSample, bool? color = null)
+        private void SamplePaint(object sender, PaintEventArgs e, ScreenSample screenSample, bool? color = null, bool withExtras = false)
         {
-            this.SamplePaint(sender, e, color.HasValue ? color.Value : this.ColorMode, screenSample.ScreenBox, screenSample.LayoutPanel, screenSample.StatusLine, screenSample.Separator);
+            this.SamplePaint(sender, e, color.HasValue ? color.Value : this.ColorMode, screenSample.ScreenBox, screenSample.LayoutPanel, screenSample.StatusLine, screenSample.Separator, withExtras);
         }
 
         /// <summary>
@@ -442,16 +487,6 @@ namespace Wx3270
         private void Color_Click(object sender, EventArgs e)
         {
             this.ColorClick(sender, e);
-        }
-
-        /// <summary>
-        /// Handler for the font change button.
-        /// </summary>
-        /// <param name="sender">Event sender.</param>
-        /// <param name="e">Event arguments.</param>
-        private void FontChangeButton_Click(object sender, EventArgs e)
-        {
-            this.FontChangeButtonClick(sender, e);
         }
 
         /// <summary>
@@ -793,11 +828,35 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void Settings_Activated(object sender, EventArgs e)
         {
-            if (!this.everActivated)
+            if (!Tour.IsComplete(this.settingsTabs.SelectedTab))
             {
-                this.everActivated = true;
-                this.Location = MainScreen.CenteredOn(this.mainScreen, this);
+                this.RunTour(this.settingsTabs.SelectedTab);
             }
+        }
+
+        /// <summary>
+        /// Run the tour for a particular tab page.
+        /// </summary>
+        /// <param name="selectedTab">Selected tab.</param>
+        /// <param name="isExplicit">True if invoked explicitly.</param>
+        private void RunTour(TabPage selectedTab, bool isExplicit = false)
+        {
+            var nodes = new List<(Control, int?, Orientation)>();
+            if (this.tours.TryGetValue(selectedTab, out IEnumerable<(Control, int?, Orientation)> tabNodes))
+            {
+                nodes.AddRange(tabNodes);
+            }
+
+            var commonButtonNodes = new[]
+            {
+                ((Control)this, (int?)99, Orientation.Centered),
+                (this.readOnlyFlowLayoutPanel, null, Orientation.LowerLeftTight),
+                (this.setToDefaultsButton, null, Orientation.LowerRight),
+                (this.undoButton, null, Orientation.LowerRight),
+                (this.helpPictureBox, null, Orientation.LowerRight),
+            };
+            nodes.AddRange(commonButtonNodes);
+            Tour.Navigate(selectedTab, nodes, isExplicit: isExplicit);
         }
 
         /// <summary>
@@ -837,7 +896,11 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void Help_Click(object sender, EventArgs e)
         {
-            Wx3270App.GetHelp("Settings/" + Wx3270App.FormatHelpTag(this.settingsTabs.SelectedTab.Name));
+            var mouseEvent = (MouseEventArgs)e;
+            if (mouseEvent.Button == MouseButtons.Left)
+            {
+                this.helpContextMenuStrip.Show(this.helpPictureBox, mouseEvent.Location);
+            }
         }
 
         /// <summary>
@@ -1051,74 +1114,153 @@ namespace Wx3270
         }
 
         /// <summary>
-        /// Context for a sample screen image.
+        /// The 'Save a copy' button was clicked.
         /// </summary>
-        private class ScreenSample
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void SaveACopyButtonClick(object sender, EventArgs e)
         {
-            /// <summary>
-            /// The settings form.
-            /// </summary>
-            private Settings settings;
+            this.mainScreen.DuplicateProfile();
+        }
 
-            /// <summary>
-            /// Initializes a new instance of the <see cref="ScreenSample"/> class.
-            /// </summary>
-            /// <param name="settings">Settings object.</param>
-            /// <param name="screenPictureBox">Picture box with screen image.</param>
-            /// <param name="tableLayoutPanel">Table layout panel encompassing screen and status line.</param>
-            /// <param name="statusLine">Status line.</param>
-            /// <param name="separator">Separator between screen and status line.</param>
-            /// <param name="colorMode">True if in 3279 mode.</param>
-            public ScreenSample(
-                Settings settings,
-                PictureBox screenPictureBox,
-                TableLayoutPanel tableLayoutPanel,
-                Label statusLine,
-                PictureBox separator,
-                bool colorMode)
+        /// <summary>
+        /// The selected tab changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event options.</param>
+        private void TabSelectedChanged(object sender, EventArgs e)
+        {
+            if (!Tour.IsComplete(this.settingsTabs.SelectedTab))
             {
-                this.settings = settings;
-                this.ScreenBox = new ScreenBox("Sample", screenPictureBox);
-                this.LayoutPanel = tableLayoutPanel;
-                this.StatusLine = statusLine;
-                this.Separator = separator;
-                this.ScreenBox.ScreenNewFont(statusLine.Font, settings.CreateSampleImage(colorMode));
-                this.ScreenBox.Activated(true);
+                this.RunTour(this.settingsTabs.SelectedTab);
             }
+        }
 
-            /// <summary>
-            /// Gets the main screen image.
-            /// </summary>
-            public ScreenBox ScreenBox { get; private set; }
+        /// <summary>
+        /// Registers a tour for a tab.
+        /// </summary>
+        /// <param name="tabPage">Tab page.</param>
+        /// <param name="nodes">Nodes for the tour.</param>
+        private void RegisterTour(TabPage tabPage, IEnumerable<(Control, int?, Orientation)> nodes)
+        {
+            this.tours[tabPage] = nodes;
+        }
 
-            /// <summary>
-            /// Gets the background container.
-            /// </summary>
-            public TableLayoutPanel LayoutPanel { get; private set; }
+        /// <summary>
+        /// An entry in the help menu was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void HelpMenuClick(object sender, EventArgs e)
+        {
+            Tour.HelpMenuClick(sender, e, "Settings/" + Wx3270App.FormatHelpTag(this.settingsTabs.SelectedTab.Name), () => this.RunTour(this.settingsTabs.SelectedTab, isExplicit: true));
+        }
 
-            /// <summary>
-            /// Gets the status line label.
-            /// </summary>
-            public Label StatusLine { get; private set; }
+        /// <summary>
+        /// The Follower button was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void Follower_Click(object sender, EventArgs e)
+        {
+            this.FollowerClick(sender, e);
+        }
 
-            /// <summary>
-            /// Gets the separator line.
-            /// </summary>
-            public PictureBox Separator { get; private set; }
+        /// <summary>
+        /// The settings window was loaded.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void SettingsLoad(object sender, EventArgs e)
+        {
+            // For some reason, this window will not center on its parent without doing this explicitly.
+            this.CenterToParent();
+        }
 
-            /// <summary>
-            /// Invalidate the screen so it gets redrawn.
-            /// </summary>
-            public void Invalidate()
-            {
-                this.ScreenBox.ScreenNeedsDrawing("settings sample", true, this.settings.CreateSampleImage(this.settings.ColorMode));
-            }
+        /// <summary>
+        /// The font family selection changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void FontFamily_Changed(object sender, EventArgs e)
+        {
+            this.FontFamilyChanged(sender, e);
+        }
+
+        /// <summary>
+        /// The font size changed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void FontSize_Changed(object sender, EventArgs e)
+        {
+            this.FontSizeChanged(sender, e);
+        }
+
+        /// <summary>
+        /// The font size is validating.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void FontSize_Validating(object sender, CancelEventArgs e)
+        {
+            this.FontSizeValidating(sender, e);
+        }
+
+        /// <summary>
+        /// The Bold button was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void Bold_Click(object sender, EventArgs e)
+        {
+            this.BoldClick(sender, e);
+        }
+
+        /// <summary>
+        /// The Italic button was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void Italic_Click(object sender, EventArgs e)
+        {
+            this.ItalicClick(sender, e);
+        }
+
+        /// <summary>
+        /// The familyComboBox needs to be drawn.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event agruments.</param>
+        private void FamilyComboBox_DrawItem(object sender, DrawItemEventArgs e)
+        {
+            this.FamilyComboBoxDrawItem(sender, e);
+        }
+
+        /// <summary>
+        /// The family combo box drop down was opened.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void FamilyComboBox_DropDown(object sender, EventArgs e)
+        {
+            this.FamilyComboBoxDropDown(sender, e);
+        }
+
+        /// <summary>
+        /// The family combo box drop down was closed.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void FamilyComboBox_DropDownClosed(object sender, EventArgs e)
+        {
+            this.FamilyComboBoxDropDownClosed(sender, e);
         }
 
         /// <summary>
         /// Names of settings that change without specific toggles.
         /// </summary>
-        private class ChangeKeyword
+        public class ChangeKeyword
         {
             /// <summary>
             /// Maximize the screen.
@@ -1229,6 +1371,74 @@ namespace Wx3270
             /// Menu bar.
             /// </summary>
             public const string MenuBar = "MenuBar";
+        }
+
+        /// <summary>
+        /// Context for a sample screen image.
+        /// </summary>
+        private class ScreenSample
+        {
+            /// <summary>
+            /// The settings form.
+            /// </summary>
+            private Settings settings;
+
+            /// <summary>
+            /// Initializes a new instance of the <see cref="ScreenSample"/> class.
+            /// </summary>
+            /// <param name="settings">Settings object.</param>
+            /// <param name="screenPictureBox">Picture box with screen image.</param>
+            /// <param name="tableLayoutPanel">Table layout panel encompassing screen and status line.</param>
+            /// <param name="statusLine">Status line.</param>
+            /// <param name="separator">Separator between screen and status line.</param>
+            /// <param name="colorMode">True if in 3279 mode.</param>
+            /// <param name="withExtras">True to include extra characters.</param>
+            public ScreenSample(
+                Settings settings,
+                PictureBox screenPictureBox,
+                TableLayoutPanel tableLayoutPanel,
+                Label statusLine,
+                PictureBox separator,
+                bool colorMode,
+                bool withExtras)
+            {
+                this.settings = settings;
+                this.ScreenBox = new ScreenBox("Sample", screenPictureBox);
+                this.LayoutPanel = tableLayoutPanel;
+                this.StatusLine = statusLine;
+                this.Separator = separator;
+                this.ScreenBox.ScreenNewFont(statusLine.Font, settings.CreateSampleImage(colorMode, withExtras));
+                this.ScreenBox.Activated(true);
+            }
+
+            /// <summary>
+            /// Gets the main screen image.
+            /// </summary>
+            public ScreenBox ScreenBox { get; private set; }
+
+            /// <summary>
+            /// Gets the background container.
+            /// </summary>
+            public TableLayoutPanel LayoutPanel { get; private set; }
+
+            /// <summary>
+            /// Gets the status line label.
+            /// </summary>
+            public Label StatusLine { get; private set; }
+
+            /// <summary>
+            /// Gets the separator line.
+            /// </summary>
+            public PictureBox Separator { get; private set; }
+
+            /// <summary>
+            /// Invalidate the screen so it gets redrawn.
+            /// </summary>
+            /// <param name="withExtras">True to include extra characters.</param>
+            public void Invalidate(bool withExtras = false)
+            {
+                this.ScreenBox.ScreenNeedsDrawing("settings sample", true, this.settings.CreateSampleImage(this.settings.ColorMode, withExtras));
+            }
         }
     }
 }

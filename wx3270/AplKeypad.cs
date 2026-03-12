@@ -5,7 +5,10 @@
 namespace Wx3270
 {
     using System;
+    using System.Drawing;
+    using System.Threading.Tasks;
     using System.Windows.Forms;
+    using I18nBase;
 
     using Wx3270.Contracts;
     using KeyEventArgs = System.Windows.Forms.KeyEventArgs;
@@ -13,7 +16,7 @@ namespace Wx3270
     /// <summary>
     /// The APL pop-up keypad.
     /// </summary>
-    public partial class AplKeypad : Form, IShift, IFlash
+    public partial class AplKeypad : Form, IShift, IFlash, IInitialLocation
     {
         /// <summary>
         /// Application instance.
@@ -26,18 +29,48 @@ namespace Wx3270
         private readonly KeypadCommon keypadCommon;
 
         /// <summary>
+        /// Lock for toured.
+        /// </summary>
+        private readonly object tourLock = new object();
+
+        /// <summary>
+        /// True if the tour has been run.
+        /// </summary>
+        private bool toured;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="AplKeypad"/> class.
         /// </summary>
         /// <param name="app">Application instance.</param>
         /// <param name="flash">Flash interface.</param>
-        public AplKeypad(Wx3270App app, IFlash flash)
+        /// <param name="opacity">Opacity interface.</param>
+        public AplKeypad(Wx3270App app, IFlash flash, IOpacity opacity)
         {
             this.InitializeComponent();
             this.app = app;
-            this.keypadCommon = new KeypadCommon(app, this, flash, new[] { this.keyboardPanel }, this.keypadOuterPanel, this.graveButton);
+            if (app != null)
+            {
+                this.keypadCommon = new KeypadCommon(app, this, flash, new[] { this.keyboardPanel }, this.keypadOuterPanel, this.graveButton);
+                this.Opacity = app.ProfileManager.Current.OpacityPercent / 100.0;
+            }
+
+            if (opacity != null)
+            {
+                opacity.OpacityEvent += (percent) => this.Opacity = percent / 100.0;
+            }
+
+            // Add to the error box.
+            ErrorBox.SetFormMapping(this, (Form)this.app?.MainWindow);
+
+            // Process restrictions.
+            if (app?.Restricted(Restrictions.GetHelp) == true)
+            {
+                this.helpPictureBox.Visible = false;
+            }
 
             // Localize.
             this.Text = I18n.Localize(this, "wx3270 APL Keypad");
+            I18n.Localize(this, this.toolTip1);
         }
 
         /// <summary>
@@ -45,13 +78,48 @@ namespace Wx3270
         /// </summary>
         public KeyboardModifier Mod => this.keypadCommon.Mod;
 
+        /// <inheritdoc/>
+        public Point? InitialLocation { private get; set; }
+
         /// <summary>
-        /// Register an opacity event.
+        /// Static form localization.
         /// </summary>
-        /// <param name="opacity">Opacity interface.</param>
-        public void RegisterOpacity(IOpacity opacity)
+        [I18nFormInit]
+        public static void FormLocalize()
         {
-            opacity.OpacityEvent += (percent) => this.Opacity = percent / 100.0;
+            new AplKeypad(null, null, null).Dispose();
+        }
+
+        /// <summary>
+        /// Static localization.
+        /// </summary>
+        [I18nInit]
+        public static void Localize()
+        {
+            // Set up the tour.
+#pragma warning disable SA1118 // Parameter should not span multiple lines
+#pragma warning disable SA1137 // Elements should have the same indentation
+
+            // Click on a key.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(AplKeypad), nameof(graveButton)), "Tour: APL keypad keys");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(AplKeypad), nameof(graveButton)),
+@"Click on any of the keys to enter the displayed character.
+
+Right-click to enter the character and close the keypad window.
+
+The Shift key may change the label and behavior of a key.
+
+You may continue to type on the keyboard while the keypad window has focus.");
+
+            // Help button.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(AplKeypad), nameof(helpPictureBox)), "Help button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(AplKeypad), nameof(helpPictureBox)),
+@"Click to display context-sensitive help from the x3270 Wiki in your browser, or to start this tour again.");
+
+#pragma warning restore SA1137 // Elements should have the same indentation
+#pragma warning restore SA1118 // Parameter should not span multiple lines
         }
 
         /// <summary>
@@ -98,6 +166,20 @@ namespace Wx3270
             }
 
             return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        /// <summary>
+        /// Run the tour.
+        /// </summary>
+        /// <param name="isExplicit">True is explicitly invoked.</param>
+        private void RunTour(bool isExplicit = false)
+        {
+            var nodes = new[]
+            {
+                ((Control)this.graveButton, (int?)null, Orientation.UpperLeft),
+                (this.helpPictureBox, null, Orientation.LowerRight),
+            };
+            Tour.Navigate(this, nodes, isExplicit: isExplicit);
         }
 
         /// <summary>
@@ -168,6 +250,15 @@ namespace Wx3270
         private void Keypad_Activated(object sender, EventArgs e)
         {
             this.keypadCommon.Activated(sender, e);
+
+            lock (this.tourLock)
+            {
+                if (!this.toured && !Tour.IsComplete(this))
+                {
+                    this.toured = true;
+                    new TaskFactory().StartNew(() => this.Invoke(new MethodInvoker(() => this.RunTour())));
+                }
+            }
         }
 
         /// <summary>
@@ -178,6 +269,47 @@ namespace Wx3270
         private void Keypad_Deactivate(object sender, EventArgs e)
         {
             this.keypadCommon.Deactivated(sender, e);
+        }
+
+        /// <summary>
+        /// The Help button was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void HelpClick(object sender, EventArgs e)
+        {
+            var mouseEvent = (MouseEventArgs)e;
+            if (mouseEvent.Button == MouseButtons.Left)
+            {
+                this.helpContextMenuStrip.Show(this.helpPictureBox, mouseEvent.Location);
+            }
+        }
+
+        /// <summary>
+        /// An item on the Help menu was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void HelpMenuClick(object sender, EventArgs e)
+        {
+            Tour.HelpMenuClick(sender, e, "APL keypad", () => this.RunTour(isExplicit: true));
+        }
+
+        /// <summary>
+        /// The keypad was loaded.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event location.</param>
+        private void KeypadLoad(object sender, EventArgs e)
+        {
+            if (this.InitialLocation.HasValue)
+            {
+                this.Location = this.InitialLocation.Value;
+            }
+            else
+            {
+                this.CenterToParent();
+            }
         }
     }
 }

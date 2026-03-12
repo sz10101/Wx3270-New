@@ -71,8 +71,8 @@ namespace Wx3270
                     break;
             }
 
-            this.Oia4AB.Text = disp;
-            this.toolTip1.SetToolTip(this.Oia4AB, tip);
+            this.oia4AB.Text = disp;
+            this.toolTip1.SetToolTip(this.oia4AB, tip);
         }
 
         /// <summary>
@@ -82,6 +82,7 @@ namespace Wx3270
         public void ChangeOiaLock(IOiaState oia)
         {
             var text = string.Empty;
+            var textNative = string.Empty;
             var tooltip = string.Empty;
             Color? color3279 = (this.colorMode && this.colors != null) ? this.colors.HostColors[HostColor.NeutralWhite] : (Color?)null;
             string tag = null;
@@ -170,8 +171,8 @@ namespace Wx3270
                 case Lock.Resolving:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow +
-                            " [DNS]";
+                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow;
+                        textNative = "[DNS]";
                     }
                     else
                     {
@@ -183,8 +184,8 @@ namespace Wx3270
                 case Lock.TcpPending:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow +
-                            " [TCP]";
+                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow;
+                        textNative = "[TCP]";
                     }
                     else
                     {
@@ -196,8 +197,8 @@ namespace Wx3270
                 case Lock.ProxyPending:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow +
-                            " [Proxy]";
+                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow;
+                        textNative = "[Proxy]";
                     }
                     else
                     {
@@ -209,8 +210,8 @@ namespace Wx3270
                 case Lock.TlsPending:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow +
-                            " [TLS]";
+                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow;
+                        textNative = "[TLS]";
                     }
                     else
                     {
@@ -222,8 +223,8 @@ namespace Wx3270
                 case Lock.TelnetPending:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow +
-                            " [TELNET]";
+                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow;
+                        textNative = "[TELNET]";
                     }
                     else
                     {
@@ -235,8 +236,8 @@ namespace Wx3270
                 case Lock.Tn3270EPending:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow +
-                            " [TN3270E]";
+                        text = OiaFont.Symbol.X + " " + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommBad + OiaFont.Symbol.CommHigh + OiaFont.Symbol.CommJag + OiaFont.Symbol.CommLow;
+                        textNative = "[TN3270E]";
                     }
                     else
                     {
@@ -248,7 +249,8 @@ namespace Wx3270
                 case Lock.Field:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + "[Field]";
+                        text = OiaFont.Symbol.X;
+                        textNative = "[Field]";
                     }
                     else
                     {
@@ -260,7 +262,8 @@ namespace Wx3270
                 case Lock.FileTransfer:
                     if (this.oia3270Font)
                     {
-                        text = OiaFont.Symbol.X + " " + "[File Transfer]";
+                        text = OiaFont.Symbol.X;
+                        textNative = "[File Transfer]";
                     }
                     else
                     {
@@ -273,14 +276,17 @@ namespace Wx3270
                     break;
             }
 
-            this.OiaLock.Text = text;
-            this.OiaLock.Tag = tag;
+            this.oiaLock.Text = text;
+            this.oiaLock.Tag = tag;
+            this.oiaLockNative.Text = textNative;
             if (color3279.HasValue)
             {
-                this.OiaLock.ForeColor = color3279.Value;
+                this.oiaLock.ForeColor = color3279.Value;
+                this.oiaLockNative.ForeColor = color3279.Value;
             }
 
-            this.toolTip1.SetToolTip(this.OiaLock, tooltip);
+            this.toolTip1.SetToolTip(this.oiaLock, tooltip);
+            this.toolTip1.SetToolTip(this.oiaLockNative, tooltip);
         }
 
         /// <summary>
@@ -319,7 +325,7 @@ namespace Wx3270
 
             if (this.oia3270Font)
             {
-                this.OiaAltShift.Text = string.Format(
+                this.oiaAltShift.Text = string.Format(
                     "{0}{1}{2}",
                     this.Mod.HasFlag(KeyboardModifier.Alt) ? "A" : " ",
                     this.Mod.HasFlag(KeyboardModifier.Shift) ? OiaFont.Symbol.UpShift : " ",
@@ -327,7 +333,7 @@ namespace Wx3270
             }
             else
             {
-                this.OiaAltShift.Text = string.Format(
+                this.oiaAltShift.Text = string.Format(
                     "{0}{1}{2}",
                     this.Mod.HasFlag(KeyboardModifier.Alt) ? "A" : " ",
                     this.Mod.HasFlag(KeyboardModifier.Shift) ? "⇑" : " ",
@@ -350,7 +356,7 @@ namespace Wx3270
                 toolTip.Add("APL");
             }
 
-            this.toolTip1.SetToolTip(this.OiaAltShift, string.Join(", ", toolTip));
+            this.toolTip1.SetToolTip(this.oiaAltShift, string.Join(", ", toolTip));
         }
 
         /// <summary>
@@ -359,8 +365,8 @@ namespace Wx3270
         /// <param name="oia">OIA state.</param>
         public void ChangeOiaInsert(IOiaState oia)
         {
-            this.OiaInsert.Text = oia.Insert ? (this.oia3270Font ? OiaFont.Symbol.Insert : "^") : string.Empty;
-            this.toolTip1.SetToolTip(this.OiaInsert, oia.Insert ? I18n.Get(OiaToolTipName.Insert) : string.Empty);
+            this.oiaInsert.Text = oia.Insert ? (this.oia3270Font ? OiaFont.Symbol.Insert : "^") : string.Empty;
+            this.toolTip1.SetToolTip(this.oiaInsert, oia.Insert ? I18n.Get(OiaToolTipName.Insert) : string.Empty);
         }
 
         /// <summary>
@@ -371,29 +377,29 @@ namespace Wx3270
         {
             if (oia.ConnectionState <= ConnectionState.TcpPending)
             {
-                this.OiaTLS.Text = string.Empty;
-                this.toolTip1.SetToolTip(this.OiaTLS, string.Empty);
+                this.oiaTLS.Text = string.Empty;
+                this.toolTip1.SetToolTip(this.oiaTLS, string.Empty);
                 return;
             }
 
-            this.OiaTLS.Text = this.oia3270Font ? OiaFont.Symbol.Lock : VersionSpecific.LockDisplay;
+            this.oiaTLS.Text = this.oia3270Font ? OiaFont.Symbol.Lock : VersionSpecific.LockDisplay;
             if (oia.Secure)
             {
                 if (oia.Verified)
                 {
-                    this.OiaTLS.ForeColor = this.ColorMap[HostColor.Green];
-                    this.toolTip1.SetToolTip(this.OiaTLS, I18n.Get(OiaToolTipName.Secure));
+                    this.oiaTLS.ForeColor = this.ColorMap[HostColor.Green];
+                    this.toolTip1.SetToolTip(this.oiaTLS, I18n.Get(OiaToolTipName.Secure));
                 }
                 else
                 {
-                    this.OiaTLS.ForeColor = this.ColorMap[HostColor.Yellow];
-                    this.toolTip1.SetToolTip(this.OiaTLS, I18n.Get(OiaToolTipName.Unverified));
+                    this.oiaTLS.ForeColor = this.ColorMap[HostColor.Yellow];
+                    this.toolTip1.SetToolTip(this.oiaTLS, I18n.Get(OiaToolTipName.Unverified));
                 }
             }
             else
             {
-                this.OiaTLS.ForeColor = this.ColorMap[HostColor.Red];
-                this.toolTip1.SetToolTip(this.OiaTLS, I18n.Get(OiaToolTipName.NotSecure));
+                this.oiaTLS.ForeColor = this.ColorMap[HostColor.Red];
+                this.toolTip1.SetToolTip(this.oiaTLS, I18n.Get(OiaToolTipName.NotSecure));
             }
         }
 
@@ -416,30 +422,32 @@ namespace Wx3270
             {
                 var secs = int.Parse(oia.Timing.Split(new[] { '.' })[0]);
                 var clock = this.oia3270Font ? OiaFont.Symbol.ClockLeft + OiaFont.Symbol.ClockRight : VersionSpecific.ClockDisplay;
+                this.oiaTiming.Text = clock;
                 if (secs < 10)
                 {
-                    this.oiaTiming.Text = clock + oia.Timing;
+                    this.oiaTimingNative.Text = oia.Timing;
                 }
                 else if (secs < 60)
                 {
-                    this.oiaTiming.Text = clock + secs;
+                    this.oiaTimingNative.Text = secs.ToString();
                 }
                 else if (secs < 60 * 60)
                 {
-                    this.oiaTiming.Text = clock + string.Format("{0}m", secs / 60);
+                    this.oiaTimingNative.Text = string.Format("{0}m", secs / 60);
                 }
                 else if (secs < 60 * 60 * 24)
                 {
-                    this.oiaTiming.Text = clock + string.Format("{0}h", secs / (60 * 60));
+                    this.oiaTimingNative.Text = string.Format("{0}h", secs / (60 * 60));
                 }
                 else
                 {
-                    this.oiaTiming.Text = clock + string.Format("{0}d", secs / (60 * 60 * 24));
+                    this.oiaTimingNative.Text = string.Format("{0}d", secs / (60 * 60 * 24));
                 }
             }
             else
             {
                 this.oiaTiming.Text = string.Empty;
+                this.oiaTimingNative.Text = string.Empty;
             }
         }
 
@@ -518,8 +526,8 @@ namespace Wx3270
                     break;
             }
 
-            this.OiaScreentrace.Text = text;
-            this.toolTip1.SetToolTip(this.OiaScreentrace, tip);
+            this.oiaScreentrace.Text = text;
+            this.toolTip1.SetToolTip(this.oiaScreentrace, tip);
         }
 
         /// <summary>
@@ -528,8 +536,8 @@ namespace Wx3270
         /// <param name="oia">OIA state.</param>
         private void ChangeOiaPrinterSession(IOiaState oia)
         {
-            this.OiaPrinter.Text = oia.PrinterSession ? (this.oia3270Font ? OiaFont.Symbol.Printer : VersionSpecific.PrinterDisplay) : string.Empty;
-            this.toolTip1.SetToolTip(this.OiaPrinter, oia.PrinterSession ? I18n.Get(OiaToolTipName.PrinterSession) : string.Empty);
+            this.oiaPrinter.Text = oia.PrinterSession ? (this.oia3270Font ? OiaFont.Symbol.Printer : VersionSpecific.PrinterDisplay) : string.Empty;
+            this.toolTip1.SetToolTip(this.oiaPrinter, oia.PrinterSession ? I18n.Get(OiaToolTipName.PrinterSession) : string.Empty);
         }
 
         /// <summary>
@@ -538,8 +546,8 @@ namespace Wx3270
         /// <param name="oia">OIA state.</param>
         private void ChangeOiaTypeahead(IOiaState oia)
         {
-            this.OiaTypeahead.Text = oia.Typeahead ? "T" : string.Empty;
-            this.toolTip1.SetToolTip(this.OiaTypeahead, oia.Typeahead ? I18n.Get(OiaToolTipName.Typeahead) : string.Empty);
+            this.oiaTypeahead.Text = oia.Typeahead ? "T" : string.Empty;
+            this.toolTip1.SetToolTip(this.oiaTypeahead, oia.Typeahead ? I18n.Get(OiaToolTipName.Typeahead) : string.Empty);
         }
 
         /// <summary>
@@ -548,8 +556,8 @@ namespace Wx3270
         /// <param name="oia">OIA state.</param>
         private void ChangeScript(IOiaState oia)
         {
-            this.OiaScript.Text = oia.Script ? "s" : string.Empty;
-            this.toolTip1.SetToolTip(this.OiaScript, oia.Script ? I18n.Get(OiaToolTipName.Script) : string.Empty);
+            this.oiaScript.Text = oia.Script ? "s" : string.Empty;
+            this.toolTip1.SetToolTip(this.oiaScript, oia.Script ? I18n.Get(OiaToolTipName.Script) : string.Empty);
         }
 
         /// <summary>
@@ -558,8 +566,8 @@ namespace Wx3270
         /// <param name="oia">OIA state.</param>
         private void ChangeReverseInput(IOiaState oia)
         {
-            this.OiaReverse.Text = oia.ReverseInput ? "R" : string.Empty;
-            this.toolTip1.SetToolTip(this.OiaReverse, oia.ReverseInput ? I18n.Get(OiaToolTipName.ReverseInput) : string.Empty);
+            this.oiaReverse.Text = oia.ReverseInput ? "R" : string.Empty;
+            this.toolTip1.SetToolTip(this.oiaReverse, oia.ReverseInput ? I18n.Get(OiaToolTipName.ReverseInput) : string.Empty);
         }
 
         /// <summary>

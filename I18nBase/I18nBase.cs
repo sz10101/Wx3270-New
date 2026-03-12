@@ -30,6 +30,16 @@ namespace I18nBase
         private const string CatalogDir = "MessageCatalog";
 
         /// <summary>
+        /// The prefix attached to untranslated messages.
+        /// </summary>
+        private const string UntranslatedPrefix = "[*] ";
+
+        /// <summary>
+        /// Display format for untranslated messages.
+        /// </summary>
+        private const string UntranslatedMessage = "? {0}";
+
+        /// <summary>
         /// Regular expression for action names.
         /// </summary>
         private static readonly Regex ActionRegex = new Regex("[A-Za-z][A-Za-z0-9_]*\\(\\)");
@@ -51,7 +61,7 @@ namespace I18nBase
         /// <summary>
         /// Localizations of known strings.
         /// </summary>
-        private static Dictionary<string, string> localized = new Dictionary<string, string>();
+        private static Dictionary<string, string> localized = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// The culture-specific DLL.
@@ -133,7 +143,13 @@ namespace I18nBase
                         {
                             try
                             {
-                                localized = serializer.Deserialize<Dictionary<string, string>>(reader);
+                                var localizedCaseSensitive = serializer.Deserialize<Dictionary<string, string>>(reader);
+                                localized.Clear();
+                                foreach (var kvp in localizedCaseSensitive)
+                                {
+                                    localized[kvp.Key] = kvp.Value.StartsWith(UntranslatedPrefix) ? kvp.Value.Substring(UntranslatedPrefix.Length) : kvp.Value;
+                                }
+
                                 UsingMessageCatalog = true;
                             }
                             catch (Exception e)
@@ -147,12 +163,7 @@ namespace I18nBase
                 {
                     // Find the localize method in the DLL.
                     var name = cultureName.Replace("-", "_");
-                    var localizeType = i18Assembly.GetType(name + "." + name);
-                    if (localizeType == null)
-                    {
-                        throw new Exception("Cannot find type " + name + "." + name + " in i18n DLL");
-                    }
-
+                    var localizeType = i18Assembly.GetType(name + "." + name) ?? throw new Exception("Cannot find type " + name + "." + name + " in i18n DLL");
                     localizeWordMethodInfo = localizeType.GetMethod("LocalizeWord");
                     if (localizeWordMethodInfo == null)
                     {
@@ -202,7 +213,7 @@ namespace I18nBase
             }
 
             var sortedMessages = new Dictionary<string, string>();
-            foreach (var key in localized.Keys.OrderBy(k => k))
+            foreach (var key in localized.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
             {
                 sortedMessages[key] = localized[key];
             }
@@ -284,7 +295,11 @@ namespace I18nBase
 
             if (!AllowDynamic)
             {
+#if DEBUG
                 throw new Exception($"Unitialized i18n for {path}");
+#else
+                return string.Format(UntranslatedMessage, s);
+#endif
             }
 
             if (localizeWordMethodInfo == null)

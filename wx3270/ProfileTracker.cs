@@ -186,7 +186,7 @@ namespace Wx3270
                 return false;
             }
 
-            var path = Path.GetFullPath(directory);
+            var path = ProfileManager.SafeGetFullPath(directory);
             foreach (var root in this.roots)
             {
                 if (root.Any((node) => node != root && node is FolderWatchNode folderNode && folderNode.PathName.Equals(path, StringComparison.InvariantCultureIgnoreCase)))
@@ -244,16 +244,20 @@ namespace Wx3270
                     this.Scan(subdir, newFolder);
                 }
             }
+            catch (UnauthorizedAccessException)
+            {
+                // This happens when trying to walk through an NTFS junction.
+            }
             catch (Exception e)
             {
-                ErrorBox.Show(e.Message, I18n.Get(Title.DirectoryWakError));
+                ErrorBox.Show(this.app.MainWindow, e.Message, I18n.Get(Title.DirectoryWakError));
                 return;
             }
 
             // Walk the profiles in this directory.
             foreach (var profilePath in Directory.EnumerateFiles(directory, "*" + ProfileManager.Suffix))
             {
-                if (profilePath.Equals(this.app.ProfileManager.Current.PathName))
+                if (!this.app.ProfileManager.Current.ReadOnly && profilePath.Equals(this.app.ProfileManager.Current.PathName))
                 {
                     // Get the local copy instead of reading it.
                     newFolder.Add(

@@ -11,6 +11,7 @@ namespace Wx3270
     using System.Linq;
     using System.Windows.Forms;
 
+    using I18nBase;
     using Wx3270.Contracts;
 
     /// <summary>
@@ -133,7 +134,8 @@ namespace Wx3270
         private Colors editedColors = new Colors(Profile.DefaultProfile.Colors);
 
         /// <summary>
-        /// Event called when any of the edited colors change.
+        /// Event called when any of the edited colors changes, within profile change processing.
+        /// Outside parties should use this one.
         /// </summary>
         private event Action EditedColorsChangedEvent = () => { };
 
@@ -174,6 +176,142 @@ namespace Wx3270
         private IProfileManager ProfileManager => this.app.ProfileManager;
 
         /// <summary>
+        /// Static localization.
+        /// </summary>
+        [I18nInit]
+        public static void LocalizeColorSettings()
+        {
+            // Set up the tours.
+#pragma warning disable SA1118 // Parameter should not span multiple lines
+#pragma warning disable SA1137 // Elements should have the same indentation
+
+            // 3279 colors.
+            // Global instructions.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(colors3279Tab)), "Tour: 3279 colors");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(colors3279Tab)),
+@"Use this tab to change how color text is displayed.
+
+These settings are applied only when wx3270 is emulating a 3279 (color) terminal.");
+
+            // Preview.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(optionsPreviewScreenPictureBox)), "Preview window");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(optionsPreviewScreenPictureBox)),
+@"This miniature emulator window displays the effect of the current set of options.");
+
+            // Color scheme.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(schemeBox)), "Color scheme");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(schemeBox)),
+@"Select the overall color scheme here.
+
+'White on black' selects the default settings for light colors against a dark background.
+
+'Black on white' selects the default settings for dark colors against a light background.
+
+'Custom' is automatically selected if you change one of the color settings below.");
+
+            // Colors.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(hostColorsBox)), "Host colors");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(hostColorsBox)),
+@"Each of the 16 blocks in this section controls a different host color (a color code sent by the host to select a particular color).
+
+Hover the mouse over each block to see which host color code it controls. Click on the block to bring up a color editor, to change how wx3270 displays that color on the screen.");
+
+            // Sample backgrounds.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(backgroundList)), "Sample backgrounds");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(backgroundList)),
+@"Click to change the background used behind the sample text.
+
+When selecting a new color, it is a good idea to cycle through each of the options here to make sure there is sufficient contrast between the foreground and background colors.");
+
+            // Selection background.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(selectionSwatch)), "Background for selected text");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(selectionSwatch)),
+@"Click to change the background color used for selected text (text highlighted with the mouse for copy/paste operations).");
+
+            // Crosshair cursor.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(crosshairSwatch)), "Crosshair cursor color");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(crosshairSwatch)),
+@"Click to change the color used for the crosshair cursor.");
+
+            // 3278 colors.
+            // Global instructions.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(colors3278Tab)), "Tour: 3278 colors");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(colors3278Tab)),
+@"Use this tab to change how monochrome text is displayed.
+
+These settings are applied only when wx3270 is emulating a 3278 (monochrome) terminal.");
+
+            // Preview.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoPreviewScreenPictureBox)), "Preview window");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoPreviewScreenPictureBox)),
+@"This miniature emulator window displays the effect of the current set of options.");
+
+            // Color scheme.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoColorSchemeBox)), "Color scheme");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoColorSchemeBox)),
+@"Select the overall color scheme here.
+
+'Green on black' selects the default settings for light colors against a dark background.
+
+'Green on white' selects the default settings for dark colors against a light background.
+
+'Custom' is automatically selected if you change one of the color settings below.");
+
+            // Background color.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoBackgroundSwatch)), "Background color");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoBackgroundSwatch)),
+@"Click to change the background color.");
+
+            // Normal text color.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoNormalSwatch)), "Normal text color");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoNormalSwatch)),
+@"A monochrome 3270 can display text in one of two modes: normal and intensified.
+
+Click to change the color of normal text.");
+
+            // Intensified text color.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoIntensifiedSwatch)), "Intensified text color");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoIntensifiedSwatch)),
+@"Click to change the color of intensified text.");
+
+            // Sample backgrounds.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoBackgroundList)), "Sample backgrounds");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoBackgroundList)),
+@"Click to change the background used behind the sample text.
+
+When selecting a new color, it is a good idea to cycle through each of the options here to make sure there is sufficient contrast between the foreground and background colors.");
+
+            // Selection background.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoSelectBackgroundSwatch)), "Background for selected text");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoSelectBackgroundSwatch)),
+@"Click to change the background color used for selected text (text highlighted with the mouse for copy/paste operations).");
+
+            // Crosshair cursor.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(Settings), nameof(monoCrosshairSample)), "Crosshair cursor color");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(Settings), nameof(monoCrosshairSample)),
+@"Click to change the color used for the crosshair cursor.");
+
+#pragma warning restore SA1137 // Elements should have the same indentation
+#pragma warning restore SA1118 // Parameter should not span multiple lines
+        }
+
+        /// <summary>
         /// Map a color-related control name to a color.
         /// </summary>
         /// <param name="controlName">Name of the control.</param>
@@ -203,22 +341,37 @@ namespace Wx3270
                 this.colorPreviewTableLayoutPanel,
                 this.colorPreviewStatusLineLabel,
                 this.colorPreviewSeparatorPictureBox,
-                true);
+                colorMode: true,
+                withExtras: false);
             this.monoScreenSample = new ScreenSample(
                 this,
                 this.monoPreviewScreenPictureBox,
                 this.monoPreviewTableLayoutPanel,
                 this.monoPreviewStatusLineLabel,
                 this.monoPreviewSeparatorPictureBox,
-                false);
+                colorMode: false,
+                withExtras: false);
+
+            // Set up event handlers for edited colors changes.
+            // This needs to happen before the AddChangeTo call below, because the callback may be called
+            // back immediately.
+            this.EditedColorsChangedEvent += this.RepaintColorTab;
 
             // Set up event handler for profile changes.
-            this.ProfileManager.Change += (profile) =>
+            this.ProfileManager.AddChangeTo((oldProfile, newProfile) =>
             {
-                this.ResetColorMap(profile.Colors);
-                this.colors3279Tab.Enabled = profile.ProfileType == ProfileType.Full && profile.ColorMode;
-                this.colors3278Tab.Enabled = profile.ProfileType == ProfileType.Full && !profile.ColorMode;
-            };
+                if (oldProfile == null || !oldProfile.Colors.Equals(newProfile.Colors))
+                {
+                    this.editedColors = new Colors(newProfile.Colors);
+
+                    // Propagate the new colors everwhere, except for the main screen (this is taken care of by
+                    // the ColorCrossbar) and back to the profile (which is illegal).
+                    this.EditedColorsChangedEvent();
+                }
+
+                this.colors3279Tab.Enabled = newProfile.ProfileType == ProfileType.Full && newProfile.ColorMode;
+                this.colors3278Tab.Enabled = newProfile.ProfileType == ProfileType.Full && !newProfile.ColorMode;
+            });
 
             // Set up the initial enables for the color tabs, and set up a handler for when the
             // mode changes.
@@ -230,66 +383,53 @@ namespace Wx3270
                 this.colors3278Tab.Enabled = !color;
             };
 
-            // Set up merge handlers.
-            this.ProfileManager.RegisterMerge(ImportType.ColorsReplace, this.MergeColors);
-
-            // Set up event handler for edited colors changes.
-            this.EditedColorsChangedEvent += this.RepaintColorTab;
-            this.EditedColorsChangedEvent += this.PushColors;
-
             // Set up the background list indices.
-            this.BackgroundList.Items.AddRange(ColorBackground.Objects().Select(o => new ColorBackground
+            this.backgroundList.Items.AddRange(ColorBackground.Objects().Select(o => new ColorBackground
             {
-                DisplayName = I18n.Localize(this.BackgroundList, o.InternalName, o.DisplayName),
+                DisplayName = I18n.Localize(this.backgroundList, o.InternalName, o.DisplayName),
                 InternalName = o.InternalName,
             }).ToArray());
-            this.BackgroundList.SelectedIndex = 0;
-            this.MonoBackgroundList.Items.AddRange(MonoBackground.Objects().Select(o => new MonoBackground
+            this.backgroundList.SelectedIndex = 0;
+            this.monoBackgroundList.Items.AddRange(MonoBackground.Objects().Select(o => new MonoBackground
             {
-                DisplayName = I18n.Localize(this.MonoBackgroundList, o.InternalName, o.DisplayName),
+                DisplayName = I18n.Localize(this.monoBackgroundList, o.InternalName, o.DisplayName),
                 InternalName = o.InternalName,
             }).ToArray());
-            this.MonoBackgroundList.SelectedIndex = 0;
-        }
+            this.monoBackgroundList.SelectedIndex = 0;
 
-        /// <summary>
-        /// Merge colors from a different profile.
-        /// </summary>
-        /// <param name="toProfile">Current profile.</param>
-        /// <param name="fromProfile">Merge profile.</param>
-        /// <param name="importType">Import type.</param>
-        /// <returns>True if profile changed.</returns>
-        private bool MergeColors(Profile toProfile, Profile fromProfile, ImportType importType)
-        {
-            if (!toProfile.Colors.Equals(fromProfile.Colors))
+            // Register our tours.
+            var colorNodes = new[]
             {
-                toProfile.Colors = fromProfile.Colors;
-                return true;
-            }
-
-            return false;
+                ((Control)this.colors3279Tab, (int?)null, Orientation.Centered),
+                (this.optionsPreviewScreenPictureBox, null, Orientation.UpperRight),
+                (this.schemeBox, null, Orientation.UpperLeft),
+                (this.hostColorsBox, null, Orientation.UpperLeftTight),
+                (this.backgroundList, null, Orientation.LowerLeft),
+                (this.selectionSwatch, null, Orientation.LowerLeft),
+                (this.crosshairSwatch, null, Orientation.LowerRight),
+            };
+            this.RegisterTour(this.colors3279Tab, colorNodes);
+            var monoNodes = new[]
+            {
+                ((Control)this.colors3278Tab, (int?)null, Orientation.Centered),
+                (this.monoPreviewScreenPictureBox, null, Orientation.UpperRight),
+                (this.monoColorSchemeBox, null, Orientation.UpperLeft),
+                (this.monoBackgroundSwatch, null, Orientation.UpperLeft),
+                (this.monoNormalSwatch, null, Orientation.UpperLeft),
+                (this.monoIntensifiedSwatch, null, Orientation.UpperRight),
+                (this.monoBackgroundList, null, Orientation.LowerLeft),
+                (this.monoSelectBackgroundSwatch, null, Orientation.LowerLeft),
+                (this.monoCrosshairSample, null, Orientation.LowerRight),
+            };
+            this.RegisterTour(this.colors3278Tab, monoNodes);
         }
 
         /// <summary>
-        /// Apply changed colors or color mode to the screen and profile.
+        /// Push the current colors to the profile.
         /// </summary>
-        private void PushColors()
+        private void PushColorsToProfile()
         {
-            // Apply to the screen.
-            this.mainScreen.Recolor(this.editedColors, this.ColorMode);
-
-            // Apply to the profile.
-            this.ProfileManager.PushAndSave((current) => current.Colors = new Colors(this.editedColors), this.ChangeName(ChangeKeyword.Color));
-        }
-
-        /// <summary>
-        /// Reset the host color map.
-        /// </summary>
-        /// <param name="colors">New colors.</param>
-        private void ResetColorMap(Colors colors)
-        {
-            this.editedColors = new Colors(colors);
-            this.EditedColorsChangedEvent();
+            this.ProfileManager.PushAndSave((current) => current.Colors = new Colors(this.editedColors), ChangeName(ChangeKeyword.Color));
         }
 
         /// <summary>
@@ -352,7 +492,7 @@ namespace Wx3270
             this.crosshairSwatch.BackColor = this.editedColors.CrosshairColor;
 
             // Set the background colors of the samples.
-            this.BackgroundListSelectedIndexChanged(this.BackgroundList, null);
+            this.BackgroundListSelectedIndexChanged(this.backgroundList, null);
 
             // Redraw the preview.
             this.colorScreenSample.Invalidate();
@@ -390,7 +530,7 @@ namespace Wx3270
             this.monoCrosshairSample.BackColor = this.editedColors.CrosshairColor;
 
             // Set the background colors of the samples.
-            this.MonoBackgroundListSelectedIndexChanged(this.MonoBackgroundList, null);
+            this.MonoBackgroundListSelectedIndexChanged(this.monoBackgroundList, null);
 
             // Redraw the preview.
             this.monoScreenSample.Invalidate();
@@ -426,7 +566,7 @@ namespace Wx3270
 
                 // Change the color map.
                 this.editedColors.HostColors[hostColor] = color;
-                this.EditedColorsChangedEvent();
+                this.PushColorsToProfile();
             }
         }
 
@@ -502,7 +642,7 @@ namespace Wx3270
             this.monoCustomButton.Checked = true;
 
             // Propagate the change.
-            this.EditedColorsChangedEvent();
+            this.PushColorsToProfile();
         }
 
         /// <summary>
@@ -514,7 +654,7 @@ namespace Wx3270
             if (this.ChangeColor(ref selectBackground))
             {
                 this.editedColors.SelectBackground = selectBackground;
-                this.EditedColorsChangedEvent();
+                this.PushColorsToProfile();
             }
         }
 
@@ -529,7 +669,7 @@ namespace Wx3270
             if (this.ChangeColor(ref crosshairColor))
             {
                 this.editedColors.CrosshairColor = crosshairColor;
-                this.EditedColorsChangedEvent();
+                this.PushColorsToProfile();
             }
         }
 
@@ -546,7 +686,7 @@ namespace Wx3270
             {
                 // See if it is already defined as a custom color.
                 var customColors = new List<Color>();
-                foreach (var customColor in this.HostColorDialog.CustomColors)
+                foreach (var customColor in this.hostColorDialog.CustomColors)
                 {
                     var drawingColor = ColorTranslator.FromOle(customColor);
                     if (drawingColor != Color.White)
@@ -571,15 +711,15 @@ namespace Wx3270
                 }
 
                 // Reset the custom colors.
-                this.HostColorDialog.CustomColors = customColors.Select(c => ColorTranslator.ToOle(c)).ToArray();
+                this.hostColorDialog.CustomColors = customColors.Select(c => ColorTranslator.ToOle(c)).ToArray();
             }
 
             // Show the dialog.
-            this.HostColorDialog.Color = color;
-            this.HostColorDialog.ShowDialog();
+            this.hostColorDialog.Color = color;
+            this.hostColorDialog.ShowDialog();
 
             // When the dialog is finished, propagate the color.
-            var newColor = this.HostColorDialog.Color;
+            var newColor = this.hostColorDialog.Color;
             if (newColor == color)
             {
                 return false;
@@ -659,7 +799,7 @@ namespace Wx3270
 
             // Switch to the default color map.
             this.editedColors.HostColors = new HostColors(Profile.DefaultProfile.Colors.HostColors);
-            this.EditedColorsChangedEvent();
+            this.PushColorsToProfile();
         }
 
         /// <summary>
@@ -678,7 +818,7 @@ namespace Wx3270
 
             // Switch to the black-on-white color map.
             this.editedColors.HostColors = new HostColors(BlackOnWhiteScheme);
-            this.EditedColorsChangedEvent();
+            this.PushColorsToProfile();
         }
 
         /// <summary>
@@ -697,7 +837,7 @@ namespace Wx3270
 
             // Switch to the default monochrome color map.
             this.editedColors.MonoColors = new MonoColors(Profile.DefaultProfile.Colors.MonoColors);
-            this.EditedColorsChangedEvent();
+            this.PushColorsToProfile();
         }
 
         /// <summary>
@@ -716,7 +856,7 @@ namespace Wx3270
 
             // Switch to the default monochrome color map.
             this.editedColors.MonoColors = new MonoColors(this.greenOnWhiteScheme);
-            this.EditedColorsChangedEvent();
+            this.PushColorsToProfile();
         }
 
         /// <summary>

@@ -11,7 +11,6 @@ namespace Wx3270
     using System.Drawing;
     using System.IO;
     using System.Linq;
-    using System.Runtime.CompilerServices;
     using System.Text.RegularExpressions;
     using System.Windows.Forms;
     using I18nBase;
@@ -92,7 +91,7 @@ namespace Wx3270
         /// <summary>
         /// The path of a node to automatically rename when it appears.
         /// </summary>
-        private string autoRenamePath;
+        private (string path, bool autoSwitchTo)? autoRenamePath;
 
         /// <summary>
         /// The path of a node to automatically select when the list is refreshed.
@@ -108,11 +107,6 @@ namespace Wx3270
         /// Where the left mouse button was pressed for drag-drop.
         /// </summary>
         private Point? mouseDownPoint;
-
-        /// <summary>
-        /// True if the form has ever been activated.
-        /// </summary>
-        private bool everActivated;
 
         /// <summary>
         /// The window handle.
@@ -143,12 +137,12 @@ namespace Wx3270
             this.TreeChanged(this.app.ProfileTracker.Tree);
 
             // Subscribe to profile changes.
-            this.ProfileManager.ChangeTo += (previous, current) =>
-                this.TreeChanged(this.app.ProfileTracker.Tree, previous == null || !previous.Name.Equals(current.Name));
+            this.ProfileManager.AddChangeTo((previous, current) =>
+                this.TreeChanged(this.app.ProfileTracker.Tree, previous == null || !previous.Name.Equals(current.Name)));
 
-            this.ProfileManager.ChangeFinal += (profile, _) =>
+            this.ProfileManager.ChangeFinal += (oldProfile, profile, isNew, isInternal) =>
             {
-                if (this.doAutoConnect)
+                if (isNew && this.doAutoConnect)
                 {
                     var autoConnectHost = profile.Hosts.FirstOrDefault(h => h.AutoConnect == AutoConnect.Connect || h.AutoConnect == AutoConnect.Reconnect);
                     if (autoConnectHost != null)
@@ -163,10 +157,8 @@ namespace Wx3270
             this.ProfileManager.DefaultProfileChanged += () => this.TreeChanged(this.app.ProfileTracker.Tree);
 
             // Subscribe to connection state events.
+            this.HostConnectionChange();
             mainScreen.ConnectionStateEvent += this.HostConnectionChange;
-
-            // Set up the merge handler. This really isn't specific to this dialog, and should probably be define
-            this.ProfileManager.RegisterMerge(ImportType.HostsMerge | ImportType.HostsReplace, MergeHandler);
 
             // Set up the undo and redo buttons.
             this.ProfileManager.RegisterUndoRedo(this.undoButton, this.redoButton, this.toolTip1);
@@ -462,6 +454,203 @@ namespace Wx3270
             I18n.LocalizeGlobal(Message.IsKeypadMap, "Keypad map template");
 
             I18n.LocalizeGlobal(Message.OpenInNewWindow, "Shift: Open in new window");
+
+            // Set up the tour.
+#pragma warning disable SA1118 // Parameter should not span multiple lines
+#pragma warning disable SA1137 // Elements should have the same indentation
+
+            // Global step 1.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), 1), "Tour: Profiles and Connections");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), 1),
+@"This window works like a File Explorer for wx3270 profiles and connections.
+
+Use this window to perform various operations on profiles and connections, and to switch between them.");
+
+            // Tree view 1.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(treeView), 1), "Profile and connection tree: Hierarchy");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(treeView), 1),
+@"There are three levels in the hierarchy: folders, profiles and connections.
+
+The top level is a folder (green folder icon). This is a real folder (directory) on your workstation that wx3270 is watching. By default, wx3270 creates and watches the 'wx3270' folder in your Documents folder. You can add more folders for it to watch.
+
+The middle level is a profile (purple folder icon). A profile is a collection of wx3270 settings. The first time it runs, wx3270 creates an initial profile called 'Base', and Base becomes your default profile. (You can change this later.) If you start wx3270 without specifying a profile on the command line, it will use your default profile. Whenever you create a new profile, it will be copied from your default profile, minus any connections.
+
+The bottom level is a connection (plug icon). A connection defines a host and a number of host-specific settings.");
+
+            // Tree view 1.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(treeView), 2), "Profile and connection tree: Basics");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(treeView), 2),
+@"Use this panel to navigate between your various profiles and connections.
+
+Double-click on a profile to switch to it. Double-click on a connection to connect to that host.
+
+Right-click on a profile or connection for a menu of operations you can perform, such as editing, renaming and deleting.
+
+Hover the mouse over a profile or connection to see its description.
+
+The current profile and the current connection (if active) are underlined. The default profile has a green asterisk on its icon.
+
+If a connection is configured for auto-connect, its icon is red.");
+
+            // Tree view 2.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(treeView), 3), "Profile and connection tree: Drag and drop");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(treeView), 3),
+@"Drag a connection within a profile to change the display order.
+
+Drag a connection onto a different profile to copy it there.
+
+Drag a profile onto another profile to do a merge. The merge operation copies parts of the dragged profile into the profile you dropped it onto. A window will pop up to select which parts you want to merge and how you want to merge them.");
+
+            // Tree view 3.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(treeView), 4), "Profile and connection tree: Special profiles");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(treeView), 4),
+@"A profile with a K icon is a keymap profile. It contains extra settings that you may want to add to your profile, such as mapping the right-hand Ctrl key to the 3270 Enter key.
+
+A profile with a P icon is a keypad profile. It contains extra keypad settings you can add to your profile.
+
+To add the settings from a special profile to your profile, drag it onto your profile with the mouse.
+
+At the bottom, there is a profile labeled <Default Values>. This isn't a real profile you can open, but you can drag it onto another profile to set parts of that profile back to the built-in wx3270 defaults. You can also right-click on it and select Duplicate to create a new profile containing only default values and no connections.");
+
+            // New Connection.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(topNewConnectionButton)), "New Connection");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(topNewConnectionButton)),
+@"Click to create a new connection in the selected profile.");
+
+            // Disconnect.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(topDisconnectButton)), "Disconnect");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(topDisconnectButton)),
+@"Click to disconnect the current connection.");
+
+            // Common.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(commonIconPictureBox)), "Common buttons");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(commonIconPictureBox)),
+@"These buttons perform common actions on the selected item.
+
+The Edit, Rename and Delete buttons have their usual meanings.");
+
+            // Duplicate.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(commonDuplicateButton)), "Duplicate button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(commonDuplicateButton)),
+@"Click to make a copy of the selected item.");
+
+            // Shortcut.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(commonShortcutButton)), "Shortcut button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(commonShortcutButton)),
+@"Click to create a desktop shortcut for the selected item.
+
+The shortcut will open wx3270 using the selected profile or connection.");
+
+            // Connection.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(connectionIconPictureBox)), "Connection buttons");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(connectionIconPictureBox)),
+@"These buttons perform operations on connections.");
+
+            // New Connection.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(connectionNewButton)), "New button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(connectionNewButton)),
+@"Click to create a new connection in the selected profile.");
+
+            // Connect.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(connectionConnectButton)), "Connect button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(connectionConnectButton)),
+@"Click to start the selected connection.
+
+Press Shift and click to start the connection in a new window.");
+
+            // Profile.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(profileIconPictureBox)), "Profile buttons");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(profileIconPictureBox)),
+@"These buttons perform operations on profiles.");
+
+            // Switch to.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(profileSwitchToButton)), "Switch To button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(profileSwitchToButton)),
+@"Click to switch to the selected profile, and auto-connect if it contains a connection marked for auto-connect.");
+
+            // Merge from.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(profileMergeFromButton)), "Merge From button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(profileMergeFromButton)),
+@"Click to merge settings from the selected profile to the active profile.");
+
+            // Import.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(profileImportButton)), "Import button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(profileImportButton)),
+@"Click to import a profile from outside the set of watched folders.
+
+You can import a wc3270 session file, which will be converted to a wx3270 profile with one connection, or a wx3270 profile.
+
+The profile will be copied into Documents\wx3270 folder.");
+
+            // Export.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(profileExportButton)), "Export button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(profileExportButton)),
+@"Click to copy the selected profile to a location outside of the set of watched folders.");
+
+            // Set as Default.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(profileDefaultButton)), "Set as Default button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(profileDefaultButton)),
+@"Click to make the selected profile your default profile.
+
+This is the profile that is chosen by default when wx3270 starts. Whenever a new profile is created, it will be a copy of the default profile, minus any connections.");
+
+            // Folder.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(folderIconPictureBox)), "Folder buttons");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(folderIconPictureBox)),
+@"These buttons perform operations on folders.");
+
+            // New Folder.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(folderNewButton)), "New Folder button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(folderNewButton)),
+@"Click to create a new folder, or to start watching an existing folder.");
+
+            // Stop Watching.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(folderUnwatchButton)), "Stop Watching button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(folderUnwatchButton)),
+@"Click to remove the selected folder from the profile and connection tree.
+
+The folder itself is not removed.");
+
+            // Undo/redo buttons.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(undoButton)), "Undo and Redo buttons");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(undoButton)),
+@"Click the '↶' (Undo) button to undo the last operation.
+
+Click the '↷' (Redo) button to redo the last operation that was rolled back with the Undo button.
+
+The button labels include a count of how many Undo and Redo operations are saved.");
+
+            // Help button.
+            I18n.LocalizeGlobal(Tour.TitleKey(nameof(ProfileTree), nameof(helpPictureBox)), "Help button");
+            I18n.LocalizeGlobal(
+                Tour.BodyKey(nameof(ProfileTree), nameof(helpPictureBox)),
+@"Click to display context-dependent help from the wx3270 Wiki in your browser, or to restart this tour.");
+
+#pragma warning restore SA1137 // Elements should have the same indentation
+#pragma warning restore SA1118 // Parameter should not span multiple lines
         }
 
         /// <summary>
@@ -501,10 +690,10 @@ namespace Wx3270
         /// <param name="components">Parent form components.</param>
         /// <param name="profilePath">Profile path name.</param>
         /// <param name="app">Application context.</param>
-        /// <param name="host">Host name.</param>
+        /// <param name="connection">Host connection name.</param>
         /// <param name="editMode">True to open in edit mode (suppress auto-connect, warn if read-only).</param>
         /// <param name="readWriteMode">True to open in read/write mode (allow auto-connect, warn if read-only).</param>
-        public static void NewWindow(Form parentWindow, IContainer components, string profilePath, Wx3270App app, string host = null, bool editMode = false, bool readWriteMode = false)
+        public static void NewWindow(Form parentWindow, IContainer components, string profilePath, Wx3270App app, string connection = null, bool editMode = false, bool readWriteMode = false)
         {
             if (restrictions.HasFlag(Restrictions.NewWindow))
             {
@@ -519,14 +708,25 @@ namespace Wx3270
                 Constants.Option.Profile,
                 "\"" + profilePath + "\"",
             };
-            if (host != null)
+            if (connection != null)
             {
-                args.Add(Constants.Option.Host);
-                args.Add("\"" + host + "\"");
+                args.Add(Constants.Option.Connection);
+                args.Add("\"" + connection + "\"");
             }
 
-            args.Add(Constants.Option.Culture);
-            args.Add(I18nBase.EffectiveCulture);
+            // -dumplocalization is used during development to run with incomplete message files.
+            // If -dumplocatlization is used in this instance, pass it to the new instance, but
+            // send the output to the bit bucket.
+            if (!string.IsNullOrEmpty(app.DumpLocalization))
+            {
+                args.Add(Constants.Option.DumpLocalization);
+                args.Add(Constants.Misc.NullDevice);
+            }
+            else
+            {
+                args.Add(Constants.Option.Culture);
+                args.Add(I18nBase.EffectiveCulture);
+            }
 
             if (editMode)
             {
@@ -545,10 +745,10 @@ namespace Wx3270
             }
 
             args.Add(Constants.Option.Topmost);
-
-            if (app.NoSplash)
+            args.Add(Constants.Option.NoSplash);
+            if (app.Detached)
             {
-                args.Add(Constants.Option.NoSplash);
+                args.Add(Constants.Option.Detached);
             }
 
             p.StartInfo.Arguments = string.Join(" ", args);
@@ -586,16 +786,27 @@ namespace Wx3270
         /// </summary>
         /// <param name="profile">Profile to add host to.</param>
         /// <param name="existingHostEntry">Optional existing host entry (used for macro editor completion).</param>
-        public void CreateHostDialog(Profile profile, HostEntry existingHostEntry = null)
+        /// <param name="fromInside">True if the call came from within the profile tree.</param>
+        /// <param name="spec">New profile specification, if continuing after a recording.</param>
+        /// <param name="loginMacroIns">Optional login macro insert.</param>
+        public void CreateHostDialog(Profile profile, HostEntry existingHostEntry = null, bool fromInside = true, HostEditor.ProfileSpec spec = null, (string, MacroEditor.EditorState)? loginMacroIns = null)
         {
             // Pop up the dialog.
-            using var editor = new HostEditor(HostEditingMode.QuickConnect, existingHostEntry, profile, this.app);
+            using var editor = new HostEditor(HostEditingMode.QuickConnect, existingHostEntry, profile, this.app, spec) { LoginMacroInsert = loginMacroIns };
             HostEntry hostEntry = null;
-            var result = editor.ShowDialog(this);
+            var result = editor.ShowDialog(fromInside ? (Form)this : this.mainScreen);
             if (result == DialogResult.OK)
             {
                 if (editor.Result.HasFlag(HostEditingResult.Save))
                 {
+                    var newProfileSpec = editor.NewProfileSpec;
+                    if (newProfileSpec != null)
+                    {
+                        // They want a new profile.
+                        this.NewProfileAndConnection(newProfileSpec, editor.HostEntry, editor.Result, fromInside);
+                        return;
+                    }
+
                     // Save the host.
                     hostEntry = editor.HostEntry;
                     if (profile.Hosts.Any(h => h.Name.Equals(hostEntry.Name, StringComparison.InvariantCultureIgnoreCase)))
@@ -633,16 +844,23 @@ namespace Wx3270
                 {
                     // Connect to the host.
                     this.connect.ConnectToHost(hostEntry);
-                    this.SafeHide();
+                    if (fromInside)
+                    {
+                        this.SafeHide();
+                    }
                 }
 
                 if (editor.Result.HasFlag(HostEditingResult.Record))
                 {
                     // Macro recorder started.
                     var editingMode = editor.Result.HasFlag(HostEditingResult.Save) ? HostEditingMode.SaveHost : HostEditingMode.QuickConnect;
-                    this.app.MacroRecorder.Start(this.CreateHostMacroRecorderDone, (editor.HostEntry, profile, editingMode));
-                    this.Hide();
+                    if (fromInside)
+                    {
+                        this.SafeHide();
+                    }
+
                     this.mainScreen.Focus();
+                    this.app.MacroRecorder.Start(this.CreateHostMacroRecorderDone, (editor.HostEntry, profile, editingMode, fromInside, editor.NewProfileSpec, editor.MacroEditorState));
                 }
             }
         }
@@ -683,6 +901,19 @@ namespace Wx3270
         }
 
         /// <summary>
+        /// Duplicate a profile.
+        /// </summary>
+        /// <param name="profile">Profile to duplicate.</param>
+        /// <remarks>
+        /// Called externally from the settings window.
+        /// </remarks>
+        public void DuplicateProfile(Profile profile)
+        {
+            this.Show();
+            this.DuplicateProfile(profile, doUndo: false, autoSwitchTo: true);
+        }
+
+        /// <summary>
         /// Creates a unique version of <paramref name="name"/>.
         /// </summary>
         /// <param name="name">Name to modify.</param>
@@ -716,59 +947,6 @@ namespace Wx3270
         }
 
         /// <summary>
-        /// Merge in the host definitions from another profile.
-        /// </summary>
-        /// <param name="toProfile">Current profile.</param>
-        /// <param name="fromProfile">Merge profile.</param>
-        /// <param name="importType">Import type.</param>
-        /// <returns>True if the list changed.</returns>
-        private static bool MergeHandler(Profile toProfile, Profile fromProfile, ImportType importType)
-        {
-            if (importType.HasFlag(ImportType.HostsReplace))
-            {
-                // Replace host definitions.
-                if (!toProfile.Hosts.SequenceEqual(fromProfile.Hosts))
-                {
-                    toProfile.Hosts = fromProfile.Hosts.Select(host =>
-                    {
-                        var clone = host.Clone();
-                        clone.Profile = toProfile;
-                        return clone;
-                    });
-                    return true;
-                }
-
-                return false;
-            }
-            else
-            {
-                // Merge host definitions.
-                var changed = false;
-                var newHosts = toProfile.Hosts.ToDictionary(h => h.Name);
-                foreach (var mergeHost in fromProfile.Hosts)
-                {
-                    if (!newHosts.TryGetValue(mergeHost.Name, out HostEntry found) || !mergeHost.Equals(found))
-                    {
-                        newHosts[mergeHost.Name] = mergeHost;
-                        changed = true;
-                    }
-                }
-
-                if (changed)
-                {
-                    toProfile.Hosts = newHosts.Values.Select(host =>
-                    {
-                        var clone = host.Clone();
-                        clone.Profile = toProfile;
-                        return clone;
-                    });
-                }
-
-                return changed;
-            }
-        }
-
-        /// <summary>
         /// Derive the compatible merge type for two profiles.
         /// </summary>
         /// <param name="profile1">First profile.</param>
@@ -793,25 +971,87 @@ namespace Wx3270
         }
 
         /// <summary>
+        /// Creates a new profile and a host entry, and switches to the new profile.
+        /// </summary>
+        /// <param name="spec">New profile specification.</param>
+        /// <param name="hostEntry">Host entry.</param>
+        /// <param name="result">Dialog result flags.</param>
+        /// <param name="fromInside">True if the call came from the ProfileTree.</param>
+        private void NewProfileAndConnection(HostEditor.ProfileSpec spec, HostEntry hostEntry, HostEditingResult result, bool fromInside)
+        {
+            var profile = this.ProfileManager.CopyDefaultProfile();
+            profile.Model = spec.Model;
+            profile.Oversize.Rows = spec.Rows;
+            profile.Oversize.Columns = spec.Columns;
+            profile.Hosts = new[] { hostEntry };
+            profile.Name = spec.ProfileName;
+            profile.PathName = Wx3270.ProfileManager.NormalizedPath(spec.ProfileName, out _);
+            if (this.ProfileManager.Save(profile.PathName, profile) && this.ProfileManager.Load(spec.ProfileName))
+            {
+                if (result.HasFlag(HostEditingResult.Connect))
+                {
+                    // Connect to the host.
+                    this.connect.ConnectToHost(hostEntry);
+                    if (fromInside)
+                    {
+                        this.SafeHide();
+                    }
+                }
+
+                if (result.HasFlag(HostEditingResult.Record))
+                {
+                    // Macro recorder started.
+                    var editingMode = result.HasFlag(HostEditingResult.Save) ? HostEditingMode.SaveHost : HostEditingMode.QuickConnect;
+                    if (fromInside)
+                    {
+                        this.SafeHide();
+                    }
+
+                    this.mainScreen.Focus();
+                    this.app.MacroRecorder.Start(this.CreateHostMacroRecorderDone, (hostEntry, profile, editingMode, fromInside, (HostEditor.ProfileSpec)null, (MacroEditor.EditorState)null));
+                }
+            }
+        }
+
+        /// <summary>
         /// The macro recorder is complete for an added host.
         /// </summary>
-        /// <param name="text">Macro text.</param>
+        /// <param name="insertText">Macro text to insert.</param>
         /// <param name="context">Context object.</param>
-        private void CreateHostMacroRecorderDone(string text, object context)
+        private void CreateHostMacroRecorderDone(string insertText, object context)
         {
-            var (entry, profile, mode) = (((HostEntry, Profile, HostEditingMode)?)context).Value;
-            this.Show();
-            entry.LoginMacro = text;
+            var (entry, profile, mode, fromInside, spec, editorState) = (((HostEntry, Profile, HostEditingMode, bool, HostEditor.ProfileSpec, MacroEditor.EditorState)?)context).Value;
+            if (fromInside)
+            {
+                this.Show();
+            }
+
             if (mode == HostEditingMode.QuickConnect)
             {
-                // Host entry has not been created yet.
-                this.CreateHostDialog(profile, entry);
+                // The host entry has not been created yet.
+                // This is a really obscure way of passing along that status, and should perhaps be
+                // an explicit flag instead.
+                this.CreateHostDialog(profile, entry, fromInside: fromInside, spec: spec, loginMacroIns: (insertText, editorState));
             }
             else
             {
-                // Host entry has been created, we connected to the host and were recording a login macro.
-                // This call assumes that the new entry is the selected node.
-                this.EditHost(this.treeView.SelectedNode as HostTreeNode, entry);
+                // The host entry has been created, we connected to the host and were recording a login macro.
+                // Find the matching tree node.
+                HostTreeNode hostNode = null;
+                this.TreeViewForEach(
+                    (node) =>
+                    {
+                        if (node is HostTreeNode hn
+                            && hn.Profile.PathName.Equals(profile.PathName, StringComparison.OrdinalIgnoreCase)
+                            && hn.Text.Equals(entry.Name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            hostNode = hn;
+                        }
+                    });
+                if (hostNode != null)
+                {
+                    this.EditHost(hostNode, entry, fromInside, loginMacroIns: (insertText, editorState));
+                }
             }
         }
 
@@ -918,8 +1158,9 @@ namespace Wx3270
                                 IsBroken = profile.Broken,
                                 IsDefaults = isDefaults,
                                 Profile = profile.Profile,
+                                PathName = profile.PathName,
+                                NodeFont = isCurrentProfile ? this.currentProfileFont : this.treeView.Font,
                             };
-                            profileNode.NodeFont = isCurrentProfile ? this.currentProfileFont : this.treeView.Font;
                             if (profile.Broken)
                             {
                                 profileNode.ImageIndex = (int)ImageEnum.BrokenFolder;
@@ -1009,10 +1250,10 @@ namespace Wx3270
                                 AutoConnect = host.AutoConnect,
                                 IsCurrentProfile = (stack.Peek() as ProfileTreeNode).IsCurrent,
                                 IsCurrentHost = isCurrentHost,
+                                ImageIndex = (int)(host.AutoConnect ? ImageEnum.AutoConnectHost : ImageEnum.Host),
+                                SelectedImageIndex = (int)(host.AutoConnect ? ImageEnum.AutoConnectHost : ImageEnum.Host),
+                                ContextMenuStrip = this.hostContextMenuStrip,
                             };
-                            hostNode.ImageIndex = (int)(host.AutoConnect ? ImageEnum.AutoConnectHost : ImageEnum.Host);
-                            hostNode.SelectedImageIndex = (int)(host.AutoConnect ? ImageEnum.AutoConnectHost : ImageEnum.Host);
-                            hostNode.ContextMenuStrip = this.hostContextMenuStrip;
                             if (isCurrentHost)
                             {
                                 hostNode.NodeFont = this.currentProfileFont;
@@ -1060,11 +1301,15 @@ namespace Wx3270
             var autoRenameNode = (TreeNode)null;
             if (this.autoRenamePath != null)
             {
-                autoRenameNode = this.treeView.Nodes.Find(this.autoRenamePath, searchAllChildren: true).FirstOrDefault();
+                autoRenameNode = this.treeView.Nodes.Find(this.autoRenamePath.Value.path, searchAllChildren: true).FirstOrDefault();
                 if (autoRenameNode != null)
                 {
                     this.treeView.SelectedNode = autoRenameNode;
                     this.selectedNode = autoRenameNode;
+                    if (autoRenameNode is ProfileTreeNode profileNode)
+                    {
+                        profileNode.SwitchAfterRename = true;
+                    }
                 }
 
                 this.autoRenamePath = null;
@@ -1098,18 +1343,11 @@ namespace Wx3270
                 }
             });
 
-            if (this.treeView.SelectedNode != null)
-            {
-                this.treeView.SelectedNode.EnsureVisible();
-            }
-
+            this.treeView.SelectedNode?.EnsureVisible();
             this.treeView.EndUpdate();
 
             // You can't start the editing operation for a node inside the BeginUpdate/EndUpdate pair.
-            if (autoRenameNode != null)
-            {
-                autoRenameNode.BeginEdit();
-            }
+            autoRenameNode?.BeginEdit();
         }
 
         /// <summary>
@@ -1118,10 +1356,7 @@ namespace Wx3270
         private void SafeHide()
         {
             this.Hide();
-            if (this.Owner != null)
-            {
-                this.Owner.BringToFront();
-            }
+            this.Owner?.BringToFront();
         }
 
         /// <summary>
@@ -1156,15 +1391,10 @@ namespace Wx3270
 
             // Set up UI elements (bottom).
             ProfileTreeNode profileNode;
-            var isFolder = this.treeView.SelectedNode is FolderTreeNode;
             var isHost = this.treeView.SelectedNode is HostTreeNode;
             var isProfile = (profileNode = this.treeView.SelectedNode as ProfileTreeNode) != null;
-            var canSwitchTo = !connected
-                && isProfile
-                && !profileNode.IsBroken
-                && !profileNode.IsDefaults;
             this.profileSwitchToButton.Enabled = isProfile && !profileNode.IsBroken && !profileNode.IsDefaults;
-            this.profileMergeFromButton.Enabled = !connected && isProfile && !profileNode.IsBroken && !profileNode.IsCurrent;
+            this.profileMergeFromButton.Enabled = isProfile && !profileNode.IsBroken && !profileNode.IsCurrent;
             this.connectionNewButton.Enabled = !connected;
             this.commonEditButton.Enabled =
                 (isHost && this.app.Allowed(Restrictions.ModifyHost))
@@ -1203,16 +1433,16 @@ namespace Wx3270
                 // Set profile-specific buttons.
                 var profileNode = node as ProfileTreeNode;
                 this.profileSwitchToButton.Enabled = !this.connected && !profileNode.IsBroken && !profileNode.IsDefaults && !profileNode.IsCurrent;
-                this.profileMergeFromButton.Enabled = !this.connected && !profileNode.IsBroken && !profileNode.IsCurrent;
+                this.profileMergeFromButton.Enabled = !profileNode.IsBroken && !profileNode.IsCurrent;
                 this.profileExportButton.Enabled = !profileNode.IsBroken && !profileNode.IsDefaults;
-                this.profileDefaultButton.Enabled = !profileNode.IsBroken && !profileNode.IsDefaults;
+                this.profileDefaultButton.Enabled = !profileNode.IsBroken && !profileNode.IsDefaults && profileNode.Profile.ProfileType == ProfileType.Full;
 
                 // Set common buttons.
                 this.commonEditButton.Enabled = this.app.Allowed(Restrictions.SwitchProfile) && !profileNode.IsDefaults && !profileNode.IsCurrent && !profileNode.IsBroken;
                 this.commonDuplicateButton.Enabled = !profileNode.IsBroken;
                 this.commonRenameButton.Enabled = !profileNode.IsDefaults && !profileNode.IsCurrent && !profileNode.IsBroken;
                 this.commonDeleteButton.Enabled = !profileNode.IsDefaults && !profileNode.IsCurrent;
-                this.commonShortcutButton.Enabled = true;
+                this.commonShortcutButton.Enabled = !profileNode.IsDefaults && profileNode.Profile.ProfileType == ProfileType.Full;
 
                 // Set connection buttons.
                 this.connectionNewButton.Enabled = profileNode.Profile?.ProfileType == ProfileType.Full;
@@ -1223,6 +1453,10 @@ namespace Wx3270
 
                 // Set folder buttons.
                 this.folderUnwatchButton.Enabled = false;
+
+                // Set context menu strip buttons.
+                this.profileShortcutToolStripMenuItem.Enabled = profileNode.Profile.ProfileType == ProfileType.Full;
+                this.profileSetAsDefaultToolStripMenuItem.Enabled = profileNode.Profile.ProfileType == ProfileType.Full;
                 return;
             }
 
@@ -1546,7 +1780,7 @@ namespace Wx3270
                 var newDestPath = this.PathCombine(destParts[0], destParts[1], newProfileName);
                 if (n > 0)
                 {
-                    this.autoRenamePath = newDestPath;
+                    this.autoRenamePath = (newDestPath, false);
                 }
                 else
                 {
@@ -1644,7 +1878,7 @@ namespace Wx3270
                         var newDestPath = this.PathCombine(destParts[0], destParts[1], newProfileName);
                         if (n > 0)
                         {
-                            this.autoRenamePath = newDestPath;
+                            this.autoRenamePath = (newDestPath, false);
                         }
                         else
                         {
@@ -1692,8 +1926,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void DragDropDone(ProfileTreeNode sourceNode, TreeNode destNode, DragEventArgs e)
         {
-            var folderNode = destNode as FolderTreeNode;
-            if (folderNode != null)
+            if (destNode is FolderTreeNode folderNode)
             {
                 // Target is a different folder.
                 if (sourceNode.IsDefaults)
@@ -1739,12 +1972,6 @@ namespace Wx3270
             if (destNode is ProfileTreeNode destProfileNode)
             {
                 // Merge a profile.
-                if (this.connected && this.ProfileManager.IsCurrentPathName(destProfileNode.Profile.PathName))
-                {
-                    // But not the current profile, if connected.
-                    return;
-                }
-
                 this.MergeFromProfile(destProfileNode.Profile, sourceNode.Profile);
             }
         }
@@ -1769,10 +1996,9 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void ConnectTree_Activated(object sender, EventArgs e)
         {
-            if (!this.everActivated)
+            if (!Tour.IsComplete(this))
             {
-                this.everActivated = true;
-                this.Location = MainScreen.CenteredOn(this.mainScreen, this);
+                this.RunTour();
             }
 
             this.treeView.Focus();
@@ -1799,8 +2025,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void TopButtonClick(object sender, EventArgs e)
         {
-            var button = sender as Button;
-            if (button == null)
+            if (!(sender is Button button))
             {
                 return;
             }
@@ -1825,8 +2050,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void ProfileButtonClick(object sender, EventArgs e)
         {
-            var button = sender as Button;
-            if (button == null)
+            if (!(sender is Button button))
             {
                 return;
             }
@@ -1839,8 +2063,8 @@ namespace Wx3270
             switch ((string)button.Tag)
             {
                 case "New":
-                    // Create a new profile from defaults.
-                    this.DuplicateProfile(Profile.DefaultProfile);
+                    // Create a new profile.
+                    this.DuplicateProfile(this.ProfileManager.CopyDefaultProfile(), treatAsDefaults: true);
                     break;
                 case "SwitchTo":
                     // Switch profiles, and auto-connect if defined.
@@ -1902,8 +2126,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void CommonButtonClick(object sender, EventArgs e)
         {
-            var button = sender as Button;
-            if (button == null)
+            if (!(sender is Button button))
             {
                 return;
             }
@@ -1994,8 +2217,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void ConnectionButtonClick(object sender, EventArgs e)
         {
-            var button = sender as Button;
-            if (button == null)
+            if (!(sender is Button button))
             {
                 return;
             }
@@ -2082,11 +2304,29 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void TreeView_AfterLabelEdit(object sender, NodeLabelEditEventArgs e)
         {
-            if (e.Node is ProfileTreeNode)
+            if (e.Node is ProfileTreeNode profileNode)
             {
-                var profileNode = (ProfileTreeNode)e.Node;
+                if (profileNode.IsCurrent)
+                {
+                    // No can do.
+                    e.CancelEdit = true;
+                    e.Node.EndEdit(true);
+                    return;
+                }
+
+                var switchAfterRename = profileNode.SwitchAfterRename;
+                profileNode.SwitchAfterRename = false;
                 if (string.IsNullOrEmpty(e.Label) || !Nickname.ValidNickname(e.Label))
                 {
+                    if (switchAfterRename && string.IsNullOrEmpty(e.Label))
+                    {
+                        // No change. Switch.
+                        if (this.app.Allowed(Restrictions.SwitchProfile))
+                        {
+                            this.LoadWithoutAutoConnect(profileNode.Profile.PathName, isShift: false);
+                        }
+                    }
+
                     // Empty label.
                     e.CancelEdit = true;
                     e.Node.EndEdit(true);
@@ -2095,9 +2335,10 @@ namespace Wx3270
 
                 // Try the rename.
                 this.autoSelectPath = this.PathCombine(profileNode.Profile.DisplayFolder, e.Label);
+                var newPath = profileNode.Profile.MappedPath(e.Label);
                 try
                 {
-                    File.Move(profileNode.Profile.PathName, profileNode.Profile.MappedPath(e.Label));
+                    File.Move(profileNode.Profile.PathName, newPath);
                 }
                 catch (Exception ex)
                 {
@@ -2107,16 +2348,26 @@ namespace Wx3270
                     return;
                 }
 
-                // Create an undo/redo record for it.
-                this.ProfileManager.PushConfigAction(
-                    new ProfileRenameConfigAction(
-                        string.Format(I18n.Get(Message.RenameProfile), e.Node.Text, e.Label),
-                        e.Label,
-                        profileNode.Profile,
-                        this.ProfileManager));
+                if (switchAfterRename)
+                {
+                    if (this.app.Allowed(Restrictions.SwitchProfile))
+                    {
+                        this.LoadWithoutAutoConnect(newPath, isShift: false);
+                    }
+                }
+                else
+                {
+                    // Create an undo/redo record for it.
+                    this.ProfileManager.PushConfigAction(
+                        new ProfileRenameConfigAction(
+                            string.Format(I18n.Get(Message.RenameProfile), e.Node.Text, e.Label),
+                            e.Label,
+                            profileNode.Profile,
+                            this.ProfileManager));
+                }
             }
 
-            if (e.Node is HostTreeNode)
+            if (e.Node is HostTreeNode hostNode)
             {
                 if (string.IsNullOrEmpty(e.Label) || e.Label.Equals(e.Node.Text))
                 {
@@ -2125,7 +2376,6 @@ namespace Wx3270
                     return;
                 }
 
-                var hostNode = (HostTreeNode)e.Node;
                 if (hostNode.Profile.Hosts.Any(h => h.Name.Equals(e.Label)))
                 {
                     ErrorBox.Show(I18n.Get(Message.NameAlreadyExists), I18n.Get(Title.RenameConnection), MessageBoxIcon.Warning);
@@ -2134,7 +2384,7 @@ namespace Wx3270
                     return;
                 }
 
-                var newPath = this.PathCombine(hostNode.Profile.DisplayFolder, hostNode.Profile.Name, e.Label);
+                var newPath = this.PathCombine((string)hostNode.Profile.DisplayFolder, (string)hostNode.Profile.Name, e.Label);
                 var refocus = new ProfileRefocus(
                     this.ProfileManager,
                     Separator,
@@ -2148,8 +2398,8 @@ namespace Wx3270
                         {
                             current.Hosts = current.Hosts.Select(h => h.Name.Equals(e.Node.Text) ? new HostEntry(h) { Name = e.Label } : h).ToArray();
                         },
-                        string.Format(I18n.Get(Message.RenameConnection), hostNode.Text, e.Label),
-                        hostNode.Profile,
+                        string.Format(I18n.Get(Message.RenameConnection), (object)hostNode.Text, e.Label),
+                        (Profile)hostNode.Profile,
                         refocus);
                 }
                 catch (InvalidOperationException ex)
@@ -2199,7 +2449,7 @@ namespace Wx3270
 
             try
             {
-                File.Delete(profileNode.Profile.PathName);
+                File.Delete(profileNode.PathName);
             }
             catch (Exception ex)
             {
@@ -2252,7 +2502,10 @@ namespace Wx3270
         /// </summary>
         /// <param name="profile">Profile to duplicate.</param>
         /// <param name="profileType">Profile type.</param>
-        private void DuplicateProfile(Profile profile, ProfileType profileType = ProfileType.Full)
+        /// <param name="treatAsDefaults">If true, treat this profile as if it were defaults.</param>
+        /// <param name="doUndo">If true, set up undo/redo.</param>
+        /// <param name="autoSwitchTo">If true, switch to the profile after the rename completes.</param>
+        private void DuplicateProfile(Profile profile, ProfileType profileType = ProfileType.Full, bool treatAsDefaults = false, bool doUndo = true, bool autoSwitchTo = false)
         {
             var typeDict = new Dictionary<ProfileType, string>
             {
@@ -2263,14 +2516,14 @@ namespace Wx3270
 
             // Re-map the type if the profile is something other than defaults.
             var from = profile.Name;
-            var isDefaults = from.Equals(Wx3270.ProfileManager.DefaultValuesName);
+            var isDefaults = treatAsDefaults || from.Equals(Wx3270.ProfileManager.DefaultValuesName) || from.Equals(Wx3270.ProfileManager.NoProfileName);
             if (!isDefaults && profileType == ProfileType.Full)
             {
                 profileType = profile.ProfileType;
             }
 
             // Find a unique new name.
-            string baseName = isDefaults ? I18n.Get(typeDict[profileType]) : from + " - " + I18n.Get(Message.Copy);
+            string baseName = profile.Imported ? from : (isDefaults ? I18n.Get(typeDict[profileType]) : from + " - " + I18n.Get(Message.Copy));
             var newName = baseName;
             var n = 2;
             while (File.Exists(profile.MappedPath(newName)))
@@ -2279,26 +2532,30 @@ namespace Wx3270
             }
 
             // Copy the file.
-            if (isDefaults)
+            Profile saveProfile = profile;
+            if (isDefaults || profile.ReadOnly)
             {
-                this.autoRenamePath = this.PathCombine(DefaultDirNodeName, newName);
+                this.autoRenamePath = (this.PathCombine(DefaultDirNodeName, newName), autoSwitchTo);
 
                 // For non-full profiles, clear out the corresponding config item.
-                Profile saveProfile = Profile.DefaultProfile;
-                if (profileType != ProfileType.Full)
+                if (isDefaults)
                 {
-                    saveProfile = saveProfile.Clone();
-                    saveProfile.ProfileType = profileType;
-                    switch (profileType)
+                    saveProfile = Profile.DefaultProfile;
+                    if (profileType != ProfileType.Full)
                     {
-                        case ProfileType.KeyboardMapTemplate:
-                            saveProfile.KeyboardMap = new KeyMap<KeyboardMap>();
-                            break;
-                        case ProfileType.KeypadMapTemplate:
-                            saveProfile.KeypadMap = new KeyMap<KeypadMap>();
-                            break;
-                        default:
-                            break;
+                        saveProfile = saveProfile.Clone();
+                        saveProfile.ProfileType = profileType;
+                        switch (profileType)
+                        {
+                            case ProfileType.KeyboardMapTemplate:
+                                saveProfile.KeyboardMap = new KeyMap<KeyboardMap>();
+                                break;
+                            case ProfileType.KeypadMapTemplate:
+                                saveProfile.KeypadMap = new KeyMap<KeypadMap>();
+                                break;
+                            default:
+                                break;
+                        }
                     }
                 }
 
@@ -2311,7 +2568,7 @@ namespace Wx3270
             }
             else
             {
-                this.autoRenamePath = this.PathCombine(profile.DisplayFolder, newName);
+                this.autoRenamePath = (this.PathCombine(profile.DisplayFolder, newName), autoSwitchTo);
                 try
                 {
                     File.Copy(profile.PathName, profile.MappedPath(newName));
@@ -2324,13 +2581,16 @@ namespace Wx3270
                 }
             }
 
-            // Set up undo/redo.
-            this.ProfileManager.PushConfigAction(
-                new ProfileDuplicateConfigAction(
-                    string.Format(I18n.Get(Message.DuplicateProfile), profile.Name, newName),
-                    profile,
-                    newName,
-                    this.ProfileManager));
+            if (doUndo)
+            {
+                // Set up undo/redo.
+                this.ProfileManager.PushConfigAction(
+                    new ProfileDuplicateConfigAction(
+                        string.Format(I18n.Get(Message.DuplicateProfile), profile.Name, newName),
+                        profile,
+                        newName,
+                        this.ProfileManager));
+            }
         }
 
         /// <summary>
@@ -2350,10 +2610,10 @@ namespace Wx3270
                 newPath = Path.Combine(folderTreeNode.FolderName, newName + Wx3270.ProfileManager.Suffix);
             }
 
-            // Copy defaults into the file.
+            // Copy the default profile into the file.
             var folderDisplayName = DirNodeName(folderTreeNode.FolderName);
-            this.autoRenamePath = this.PathCombine(folderDisplayName, newName);
-            if (!this.ProfileManager.Save(newPath, Profile.DefaultProfile))
+            this.autoRenamePath = (this.PathCombine(folderDisplayName, newName), false);
+            if (!this.ProfileManager.Save(newPath, this.ProfileManager.CopyDefaultProfile()))
             {
                 ErrorBox.Show(I18n.Get(Message.ProfileSaveFailed), I18n.Get(Title.CreateProfile));
                 this.autoRenamePath = null;
@@ -2461,7 +2721,7 @@ namespace Wx3270
             }
 
             // Set up auto-rename.
-            this.autoRenamePath = this.PathCombine(DirNodeName(destFolderPath), newName);
+            this.autoRenamePath = (this.PathCombine(DirNodeName(destFolderPath), newName), false);
 
             if (Path.GetExtension(importName).Equals(Wx3270.ProfileManager.Suffix, StringComparison.InvariantCultureIgnoreCase))
             {
@@ -2495,7 +2755,7 @@ namespace Wx3270
                 // Import of wc3270 profile.
                 try
                 {
-                    var import = new Wc3270Import(this.app.CodePageDb);
+                    var import = new Wc3270Import(this.app);
                     import.Read(importName);
                     this.ProfileManager.Save(destProfilePath, import.Digest());
                 }
@@ -2527,17 +2787,20 @@ namespace Wx3270
         /// Create a shortcut.
         /// </summary>
         /// <param name="profile">Profile object.</param>
-        /// <param name="host">Host name.</param>
-        private void CreateShortcut(Profile profile, string host = null)
+        /// <param name="connection">Connection name.</param>
+        private void CreateShortcut(Profile profile, string connection = null)
         {
             this.shortcutDialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-            this.shortcutDialog.FileName = (host ?? profile.Name) + ".lnk";
-            switch (this.shortcutDialog.ShowDialog(this))
+            this.shortcutDialog.FileName = (connection ?? profile.Name) + ".lnk";
+            if (this.shortcutDialog.ShowDialog(this) != DialogResult.OK)
             {
-                case DialogResult.OK:
-                    break;
-                default:
-                    return;
+                return;
+            }
+
+            using var optionsDialog = new ShortcutDialog(this.app, this.shortcutDialog.FileName, this.mainScreen.Location, profile.Name, connection ?? string.Empty);
+            if (optionsDialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
             }
 
             var args = new List<string>
@@ -2545,14 +2808,40 @@ namespace Wx3270
                 Constants.Option.Profile,
                 "\"" + profile.PathName + "\"",
             };
-            if (host != null)
+            if (connection != null)
             {
-                args.Add(Constants.Option.Host);
-                args.Add("\"" + host + "\"");
+                args.Add(Constants.Option.Connection);
+                args.Add("\"" + connection + "\"");
+            }
+
+            if (optionsDialog.Maximized)
+            {
+                args.Add(Constants.Option.Maximize);
+            }
+
+            if (optionsDialog.FullScreen)
+            {
+                args.Add(Constants.Option.FullScreen);
+            }
+
+            if (optionsDialog.StartLocation.HasValue)
+            {
+                args.Add(Constants.Option.Location);
+                args.Add($"{optionsDialog.StartLocation.Value.X},{optionsDialog.StartLocation.Value.Y}");
+            }
+
+            if (optionsDialog.ReadOnly)
+            {
+                args.Add(Constants.Option.ReadOnly);
+            }
+
+            if (optionsDialog.Detached)
+            {
+                args.Add(Constants.Option.Detached);
             }
 
             var shell = new WshShell();
-            var shortcut = (IWshShortcut)shell.CreateShortcut(this.shortcutDialog.FileName);
+            var shortcut = (IWshShortcut)shell.CreateShortcut(optionsDialog.PathName);
             shortcut.Description = "wx3270 shortcut";
             shortcut.TargetPath = Application.ExecutablePath;
             shortcut.Arguments = string.Join(" ", args);
@@ -2579,7 +2868,7 @@ namespace Wx3270
 
             // Set up auto-rename.
             var newPath = this.PathCombine(hostNode.Profile.DisplayFolder, hostNode.Profile.Name, newName);
-            this.autoRenamePath = newPath;
+            this.autoRenamePath = (newPath, false);
 
             // Make the change.
             var refocus = new ProfileRefocus(
@@ -2714,7 +3003,9 @@ namespace Wx3270
         /// </summary>
         /// <param name="hostNode">Host to edit.</param>
         /// <param name="editedEntry">Edited entry, for recording completion.</param>
-        private void EditHost(HostTreeNode hostNode, HostEntry editedEntry = null)
+        /// <param name="fromInside">True if called from the ProfileTree.</param>
+        /// <param name="loginMacroIns">Login macro insert.</param>
+        private void EditHost(HostTreeNode hostNode, HostEntry editedEntry = null, bool fromInside = true, (string, MacroEditor.EditorState)? loginMacroIns = null)
         {
             var hostEntry = editedEntry;
             if (hostEntry == null)
@@ -2728,8 +3019,8 @@ namespace Wx3270
             }
 
             // Pop up the dialog.
-            using var editor = new HostEditor(HostEditingMode.SaveHost, hostEntry, hostNode.Profile, this.app);
-            var result = editor.ShowDialog(this);
+            using var editor = new HostEditor(HostEditingMode.SaveHost, hostEntry, hostNode.Profile, this.app) { LoginMacroInsert = loginMacroIns };
+            var result = editor.ShowDialog(fromInside ? (Form)this : this.mainScreen);
             if (result == DialogResult.OK)
             {
                 if (editor.Result.HasFlag(HostEditingResult.Save))
@@ -2768,7 +3059,7 @@ namespace Wx3270
 
                 if (editor.Result.HasFlag(HostEditingResult.Record))
                 {
-                    this.app.MacroRecorder.Start(this.EditHostMacroRecorderComplete, (hostNode, editor.HostEntry));
+                    this.app.MacroRecorder.Start(this.EditHostMacroRecorderComplete, (hostNode, editor.HostEntry, editor.MacroEditorState));
                     this.Hide();
                     this.mainScreen.Focus();
                 }
@@ -2782,12 +3073,11 @@ namespace Wx3270
         /// <param name="context">Context object.</param>
         private void EditHostMacroRecorderComplete(string text, object context)
         {
-            var (node, entry) = (((HostTreeNode, HostEntry)?)context).Value;
-            entry.LoginMacro = text;
+            var (node, entry, editorState) = (((HostTreeNode, HostEntry, MacroEditor.EditorState)?)context).Value;
 
             // Restore this window and the dialog.
             this.Show();
-            this.EditHost(node, entry);
+            this.EditHost(node, entry, loginMacroIns: (text, editorState));
         }
 
         /// <summary>
@@ -2802,8 +3092,7 @@ namespace Wx3270
                 return;
             }
 
-            string tag = menuItem.Tag as string;
-            if (tag == null)
+            if (!(menuItem.Tag is string tag))
             {
                 return;
             }
@@ -2813,8 +3102,7 @@ namespace Wx3270
                 return;
             }
 
-            var selectedProfileNode = this.rightClickNode as ProfileTreeNode;
-            if (selectedProfileNode == null)
+            if (!(this.rightClickNode is ProfileTreeNode selectedProfileNode))
             {
                 return;
             }
@@ -2880,14 +3168,12 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void HostContextMenuClick(object sender, EventArgs e)
         {
-            var menuItem = sender as ToolStripMenuItem;
-            if (menuItem == null)
+            if (!(sender is ToolStripMenuItem menuItem))
             {
                 return;
             }
 
-            var tag = menuItem.Tag as string;
-            if (tag == null)
+            if (!(menuItem.Tag is string tag))
             {
                 return;
             }
@@ -2897,8 +3183,7 @@ namespace Wx3270
                 return;
             }
 
-            var selectedHostNode = this.rightClickNode as HostTreeNode;
-            if (selectedHostNode == null)
+            if (!(this.rightClickNode is HostTreeNode selectedHostNode))
             {
                 return;
             }
@@ -2950,8 +3235,7 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void TreeViewDoubleClick(object sender, EventArgs e)
         {
-            var profileNode = this.treeView.SelectedNode as ProfileTreeNode;
-            if (profileNode != null)
+            if (this.treeView.SelectedNode is ProfileTreeNode profileNode)
             {
                 if (profileNode.IsDefaults || profileNode.IsCurrent || this.app.Restricted(Restrictions.SwitchProfile))
                 {
@@ -2968,8 +3252,7 @@ namespace Wx3270
                 return;
             }
 
-            var hostNode = this.treeView.SelectedNode as HostTreeNode;
-            if (hostNode != null)
+            if (this.treeView.SelectedNode is HostTreeNode hostNode)
             {
                 if (hostNode.Profile != this.ProfileManager.Current && this.app.Restricted(Restrictions.SwitchProfile))
                 {
@@ -3109,7 +3392,11 @@ namespace Wx3270
         /// <param name="e">Event arguments.</param>
         private void Help_Clicked(object sender, EventArgs e)
         {
-            Wx3270App.GetHelp("Profiles");
+            var mouseEvent = (MouseEventArgs)e;
+            if (mouseEvent.Button == MouseButtons.Left)
+            {
+                this.helpContextMenuStrip.Show(this.helpPictureBox, mouseEvent.Location);
+            }
         }
 
         /// <summary>
@@ -3316,7 +3603,63 @@ namespace Wx3270
         private void NewProfileContextMenuClick(object sender, EventArgs e)
         {
             var profileType = (ProfileType)Enum.Parse(typeof(ProfileType), (sender as ToolStripMenuItem).Tag as string);
-            this.DuplicateProfile(Profile.DefaultProfile, profileType);
+            this.DuplicateProfile(this.ProfileManager.CopyDefaultProfile(), profileType, treatAsDefaults: profileType == ProfileType.Full);
+        }
+
+        /// <summary>
+        /// One of the help menu items was clicked.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void HelpMenuClick(object sender, EventArgs e)
+        {
+            Tour.HelpMenuClick(sender, e, "Profiles", () => this.RunTour(isExplicit: true));
+        }
+
+        /// <summary>
+        /// Run the tour.
+        /// </summary>
+        /// <param name="isExplicit">True if invoked explicitly.</param>
+        private void RunTour(bool isExplicit = false)
+        {
+            var nodes = new[]
+            {
+                ((Control)this, (int?)1, Orientation.Centered),
+                (this.treeView, 1, Orientation.UpperLeftTight),
+                (this.treeView, 2, Orientation.UpperLeftTight),
+                (this.treeView, 4, Orientation.UpperLeftTight),
+                (this.topNewConnectionButton, null, Orientation.UpperLeft),
+                (this.topDisconnectButton, null, Orientation.UpperLeft),
+                (this.commonIconPictureBox, null, Orientation.LowerLeft),
+                (this.commonDuplicateButton, null, Orientation.LowerLeft),
+                (this.commonShortcutButton, null, Orientation.LowerRight),
+                (this.connectionIconPictureBox, null, Orientation.LowerLeft),
+                (this.connectionNewButton, null, Orientation.LowerLeft),
+                (this.connectionConnectButton, null, Orientation.LowerLeft),
+                (this.profileIconPictureBox, null, Orientation.LowerLeft),
+                (this.profileSwitchToButton, null, Orientation.LowerLeft),
+                (this.profileMergeFromButton, null, Orientation.LowerLeft),
+                (this.profileImportButton, null, Orientation.LowerRight),
+                (this.profileExportButton, null, Orientation.LowerRight),
+                (this.profileDefaultButton, null, Orientation.LowerRight),
+                (this.folderIconPictureBox, null, Orientation.LowerLeft),
+                (this.folderNewButton, null, Orientation.LowerLeft),
+                (this.folderUnwatchButton, null, Orientation.LowerLeft),
+                (this.undoButton, null, Orientation.UpperRight),
+                (this.helpPictureBox, null, Orientation.UpperRight),
+            };
+            Tour.Navigate(this, nodes, isExplicit: isExplicit);
+        }
+
+        /// <summary>
+        /// The form is being loaded.
+        /// </summary>
+        /// <param name="sender">Event sender.</param>
+        /// <param name="e">Event arguments.</param>
+        private void ProfileTreeLoad(object sender, EventArgs e)
+        {
+            // For some reason, this window will not center on its parent without doing this explicitly.
+            this.CenterToParent();
         }
 
         /// <summary>
@@ -3352,6 +3695,16 @@ namespace Wx3270
             /// Gets or sets the profile.
             /// </summary>
             public Profile Profile { get; set; }
+
+            /// <summary>
+            /// Gets or sets the profile's path name.
+            /// </summary>
+            public string PathName { get; set; }
+
+            /// <summary>
+            /// Gets or sets a value indicating whether to switch to this profile after a rename is complete.
+            /// </summary>
+            public bool SwitchAfterRename { get; set; }
         }
 
         /// <summary>
